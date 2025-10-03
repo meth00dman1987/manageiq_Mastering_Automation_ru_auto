@@ -1,0 +1,286 @@
+[[the-options-hash]]
+== Варианты хэш
+
+Пользователь запускает рабочий процесс обеспечения виртуальной машины, нажав на кнопку «LifeCycle -> Provision VMS *» в * виртуальных машинах * Панель инструментов WebUI. После выбора шаблона для предоставления, запрашивающий пользователь завершает диалог обеспечения и вводит все детали, необходимые для создания виртуальной машины; Например, количество процессоров, память, сеть для подключения и формат жесткого диска. Каким -то образом эта информация, собранная из WebUI, должна быть добавлена ​​в рабочий процесс автоматизации.
+
+Обеспечение виртуальной машины или экземпляра - это сложная операция, которая, как мы только что видели, включает в себя этап утверждения. Мы видели в ссылке: ../ requests_and_tasks/gupt.asciidoc [запросы и задачи], что операция автоматизации, включающая этап утверждения, разделена на две части, _request_ и _task_. В случае операции обеспечения виртуальной машины запрос представлен объектом _miq_provision_request_, и задача представлен объектом _miq_provision_.
+
+Входные данные и параметры, выбранные из диалогового окна обеспечения, добавляются в объект _miq_provision_request_ как пары ключа/значение в структуре данных, известной как _options hash_. Когда мы пишем наши пользовательские методы Ruby для взаимодействия с рабочим процессом обеспечения, мы часто читаем и пишем в хэш параметров.
+
+Если запрос на предоставление утвержден, опционы с объектом запроса распространяются на объект задачи, но между двумя хешами существуют небольшие различия. Мы рассмотрим это следующее.
+
+=== Request Object (miq_provision_request)
+
+Содержание вариантов вариантов объекта запроса немного различается между целями обеспечения (VMware, OpenStack, RHEV и т. Д.) и целевой операционной системой виртуальной машины (Linux, Windows и т. Д.), Но типичный хэш для предоставления виртуальной машины Linux для провайдера RHEV::
+
+[source,ruby]
+....
+request.options [: addr_mode] = ["static", "static"] (тип: массив)
+request.options [: cluster_filter] = [nil, nil] (тип: массив)
+request.options [: cores_per_socket] = [1, "1"] (тип: массив)
+request.options [: current_tab_key] = cumpize (type: symbol)
+request.options [: campaintion_template_script] = nil
+request.options [: campactize_enabled] = ["Отключить"] (тип: массив)
+request.options [: delivery_on] = 2015-06-05 07:33:20 UTC (тип: время)
+request.options [: disk_format] = ["default", "default"] (тип: массив)
+request.options [: initial_pass] = true (type: trueclass)
+request.options [: ip_addr] = nil
+request.options [: linked_clone] = [nil, nil] (тип: массив)
+request.options [: mac_address] = nil
+request.options [: miqrequestdialog_name] = miq_provision_redhat_dialogs_template
+request.options [: network_adapters] = [1, "1"] (тип: массив)
+request.options [: number_of_sockets] = [1, "1"] (тип: массив)
+request.options [: number_of_vms] = [1, "1"] (тип: массив)
+request.options [: antaintion_email] = pemcg@bit63.com (type: string)
+request.options [: antoclive_first_name] = peter (type: string)
+request.options [: antocally_last_name] = mcgowan (type: string)
+request.options [: pass] = 1 (type: fixnum)
+request.options [: placement_auto] = [false, 0] (тип: массив)
+request.options [: placement_cluster_name] = [100000000000001, "Производство"]
+request.options [: placement_dc_name] = [100000000000002, "по умолчанию"] (тип: массив)
+request.options [: placement_ds_name] = [100000000000001, "data"] (тип: массив)
+request.options [: placement_host_name] = [100000000000001, "rhevh12.bit63.net"]
+request.options [: provision_type] = ["native_clone", "Native Clone"]
+request.options [: пенсию] = [0, "неопределенное"] (тип: массив)
+request.options [: retirement_warn] = [604800, "1 неделя"] (тип: массив)
+request.options [: root_password] = nil
+request.options [: adage_time] = 2015-06-06 00:00:00 UTC (тип: время)
+request.options [: adage_type] = ["немедленно", "немедленно при одобрении"]
+request.options [: src_ems_id] = [100000000000001, "rhev"] (тип: массив)
+request.options [: src_vm_id] = [100000000000004, "rhel7-generic"] (тип: массив)
+request.options [: start_date] = 6/6/2015 (тип: строка)
+request.options [: start_hour] = 00 (type: string)
+request.options [: start_min] = 00 (type: string)
+request.options [: без сохранения состояния] = [false, 0] (тип: массив)
+request.options [: subnet_mask] = nil
+request.options [: vlan] = ["public", "public"] (тип: массив)
+request.options [: vm_auto_start] = [false, 0] (тип: массив)
+request.options [: vm_description] = nil
+request.options [: vm_memory] = ["2048", "2048"] (тип: массив)
+request.options [: vm_name] = rhel7srv002 (type: string)
+request.options [: vm_prefix] = nil
+request.options [: vm_tags] = [] (тип: массив)
+....
+
+=== Correlation with the Provisioning Dialog
+
+Пары ключа/значения, которые составляют хэш с параметрами, изначально поступают из диалогового окна обеспечения (см. Ссылку: ../ the_provisioning_dialog/gupt.asciidoc [диалог обеспечения]). Например, если мы посмотрим на извлечение из одного из диалогового аналога YAML, мы видим определение для опции _number_of_sockets_
+
+....
+:number_of_sockets:
+  :values:
+    1: '1'
+    2: '2'
+    4: '4'
+    8: '8'
+  :description: Number of Sockets
+  :required: false
+  :display: :edit
+  :default: 1
+  :data_type: :integer
+....
+
+В хэш с вариантами это соответствует:
+
+[source,ruby]
+----
+request.options [: number_of_sockets]
+----
+
+Мы также видим, что значения хэша параметров для многих из этих ключей являются двумя элементами, например:
+
+[source,ruby]
+....
+request.options [: cores_per_socket] = [1, "1"]
+....
+
+Этот список соответствует одному из * значения: 'отображение имени' *, перечисленные в подразделе *: * значения: * в диалоге YAML Provisioning, например, так:
+
+....
+:cores_per_socket:
+  :values:
+    1: '1'
+    ...
+....
+
+Некоторые из списков значений с хэш параметров содержат идентификаторы объектов, например:
+[source,ruby]
+....
+request.options [: placement_host_name] = [100000000000001, "rhevh12.bit63.net"]
+....
+
+Эти варианты хэш -клавиш, как правило, заполняются динамическим методом. Например, диалоговое окно YAML для этого имени этого ключа не содержит статического *: значения: * Список, вместо этого указывает, что значения будут динамически генерированы методом `Alling_hosts, следующим образом:
+
+....
+:placement_host_name:
+  :values_from:
+    :method: :allowed_hosts
+  :auto_select_single: false
+  :description: Name
+  :required: false
+  :display: :edit
+  :data_type: :integer
+  :required_description: Host Name
+....
+
+Метод `Alling_hosts фильтрует список хостов, представленных пользователю на основе ранее выбранных значений для кластера, пула ресурсов и папки.
+
+=== Accessing the Options Hash from an Automation Script
+
+Когда мы работаем с нашими собственными методами, которые взаимодействуют с процессом обеспечения виртуальной машины, нам часто необходимо получить и устанавливать значения в хэш опций.
+
+==== Reading Values
+
+Мы можем прочитать любое из значений хэша параметров, используя метод `get_option`, например, так:
+
+[source,ruby]
+----
+запрос = $ evm.root ['miq_provision_request']
+memory_in_request = request.get_option (: vm_memory) .to_i
+----
+
+Для вариантов хэш -ключей, значения которых являются списками, метод `get_option` возвращает первое значение в списке (существует соответствующий метод` get_option_last`, который возвращает последнее значение в списке).
+
+==== Setting Values
+
+Мы также можем установить большинство параметров, используя метод `set_option`, следующим образом:
+
+[source,ruby]
+----
+request.set_option (: subnet_mask, '255.255.254.0')
+----
+
+При настройке вариантов хэш -ключей, значения которых обычно составляют списки, нам, как правило, нам нужно только написать скалярное значение, используя `set_option`. Например, это может быть целое число или строка:
+
+[source,ruby]
+----
+request.set_option (: number_of_sockets, '2')
+----
+или
+[source,ruby]
+----
+request.set_option (: number_of_sockets, 2)
+----
+
+==== Set Methods
+
+Несколько вариантов хэш -клавиш имеют свой собственный метод `set`, перечисленный в следующих таблицах, который мы должны использовать вместо` set_option`.
+
+[[table20.1]]
+. Генерические параметры хеш -клавиши
+[options="header"]
+|===================================================================
+| Параметры хэш -ключ | Метод установки | Тип аргумента
+| `: vm_notes` |` request.set_vm_notes` | String
+|===================================================================
+
+[[table20.2]]
+.Infrastructure Параметры
+[options="header"]
+|===================================================================
+| Параметры хэш -ключ | Метод установки | Тип аргумента
+| `: vlan` |` request.set_vlan` | String
+| `: dvs` |` request.set_dvs` | String
+| `: addr_mode` |` request.set_network_address_mode` | String
+| `: placement_host_name` |` request.set_host` | Объект модели службы
+| `: placement_ds_name` |` request.set_storage` | Объект модели службы
+| `: placement_folder_name` |` request.set_folder` | Объект модели службы
+| `: placement_cluster_name` |` request.set_cluster` | Объект модели службы
+| `: placement_rp_name` |` request.set_resource_pool` | Объект модели службы
+| `: pxe_server_id` |` request.set_pxe_server` | Объект модели службы
+| `: pxe_image_id` (Linux Server Provision) |` request.set_pxe_image` | Объект модели службы
+| `: pxe_image_id` (Windows Server Provision) |` request.set_windows_image` | Объект модели службы
+| `: cumpaition_template_id` |` request.set_customization_template` | Объект модели службы
+| `: iso_image_id` |` request.set_iso_image` | Объект модели службы
+|===================================================================
+
+[[table20.3]]
+.Cloud-специфичные параметры хэш-клавиши набор клавиш
+[options="header"]
+|===================================================================
+| Параметры хэш -ключ | Метод установки | Тип аргумента
+| `: доступность_зон
+| `: exance_type` |` request.set_instance_type` | Объект модели службы
+| `: Security_Groups` |` request.set_security_group` | Объект модели службы
+| `: floating_ip_address` |` request.set_floating_ip_address` | Объект модели службы
+| `: cloud_network` |` request.set_cloud_network` | Объект модели службы
+| `: cloud_subnet` |` request.set_cloud_subnet` | Объект модели службы
+| `: guest_access_key_pair` |` request.set_guest_access_key_pair` | Объект модели службы
+| `: cloud_tenant` |` request.set_cloud_tenant` | Объект модели службы
+| `: resource_group` (только Azure) |` request.set_resource_group` | Объект модели службы
+|===================================================================
+
+Уставные методы, которые принимают объект модели службы в качестве аргумента, выполняют проверку достоверности, что значение, которое мы настройки являются подходящим ресурсом для экземпляра обеспечения. Мы используем один из этих методов следующим образом:
+
+[source,ruby]
+----
+cloud_network = $ evm.vmdb ('cloudnetwork'). find_by_name ('private_3')
+Если только cloud_network.nil?
+prov.set_cloud_network (cloud_network)
+  ...
+----
+
+[TIP]
+Используйте один из методов, обсуждаемых в ссылке: ../ spestigative_debugging/gupt.asciidoc [отладка расследования], чтобы выяснить, какие пары ключей/значения находятся в вариантах, чтобы манипулировать.
+
+=== Task Object (miq_provision)
+
+Опции хеш из объекта запроса распространяются на каждый объект задачи, где впоследствии он расширяется методами, конкретными для задачи, такими как методы обработки именования виртуальных машин:
+
+[source,ruby]
+----
+miq_provision.options [: dest_cluster] = [1000000000001, "по умолчанию"]
+miq_provision.options [: dest_host] = [1000000000001, "rhelh03.bit63.net"]
+miq_provision.options [: dest_storage] = [1000000000001, "data"]
+miq_provision.options [: vm_target_hostname] = rhel7srv002
+miq_provision.options [: vm_target_name] = rhel7srv002
+----
+
+Некоторые клавиши с параметрами, такие как `: number_of_vms`, не влияют на изменение в объекте задачи; Они актуальны только для запроса.
+
+==== Adding Network Adapters
+
+Есть два дополнительных метода, которые мы можем вызвать на объект `miq_provision`, чтобы добавить дополнительные сетевые адаптеры. Это `set_network_adapter` и` set_nic_settings`.
+
+[source,ruby]
+----
+idx = 1
+miq_provision.set_network_adapter (idx,
+                         {
+: network => 'VM Network',
+: devicetype => 'virtualvmxnet3',
+: is_dvs => false
+                         })
+
+miq_provision.set_nic_settings (idx,
+                          {
+: ip_addr => '10 .2.1.23 ',
+: subnet_mask => '255.255.255.0',
+: addr_mode => ['static', 'static']
+                          })
+----
+
+
+
+=== Adding Our Own Options: The ws_values Hash
+
+Иногда мы хотим добавить наши собственные пары клавиш/значения в объект запроса или задачи, чтобы их можно было использовать на последующей стадии на машине состояния виртуальной машины для пользовательской обработки. Примером может быть размер и точка крепления для вторичного диска, который должен быть добавлен в рамках рабочего процесса обеспечения. Хотя мы могли бы добавить наши собственные пары ключей/значения непосредственно в HASH Option, мы рискуем перезаписать ключ, определенную в коде основного обеспечения (или один добавлен в более поздний релиз MANGICIQ).
+
+Существует существующий вариант хэш -ключа, который предназначен для использования для этого, называемый `ws_values`. Значение этого ключа - сама хэш, содержащий наши пары ключей/значения, которые мы хотим сохранить.
+
+[source,ruby]
+----
+miq_provision.options [: ws_values] = {: disk_dize_gb => 100 ,: mountpoint => "/opt"}
+----
+
+Хеш `ws_values` также используется для хранения пользовательских значений, которые мы могли бы обеспечить, если мы предоставим виртуальную машину программно из Retfful API или из` create_provision_request`. Одним из аргументов для программного вызова для создания виртуальной машины является набор пар/значения, называемые `educt_values` (изначально он назывался` eductvalues ​​'в вызове SOAP). Любая пара ключей/значения, поставляемые с этим аргументом для автоматического вызова, будет автоматически добавлена ​​в хэш `ws_options`.
+
+Используя хэш `ws_options` для хранения наших собственных паров пользовательских ключей/значений, мы делаем наш код совместимым с запросом по обеспечению виртуальной реальности, который называется программно.
+
+=== Summary
+
+Параметры в объектах _miq_provision_request_ и _miq_provision_ являются одними из наиболее важных структур данных, с которыми мы работаем. Они содержат всю информацию, необходимую для создания новой виртуальной машины или экземпляра, и, устанавливая их значения ключей, мы можем влиять на результат операции обеспечения.
+
+Как обсуждалось в ссылке: ../ requests_and_tasks/gupt.asciidoc [запросы и задачи], задача иногда знает, следует ли получить доступ к хэш параметров в объектах _miq_provision_request_ или _miq_provision_, особенно при настройке значений. Нам нужно применить наши знания о запросах и задачах, чтобы определить, в каком контексте мы работаем.
+
+Мы также должны знать, какие варианты вариантов имеют свой собственный метод «набора», так как эти ключи обычно требуют массива, отформатированного определенным образом.

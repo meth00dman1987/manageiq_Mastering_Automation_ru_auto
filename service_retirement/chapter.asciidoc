@@ -1,0 +1,100 @@
+[[service-retirement]]
+== Служба выхода на пенсию
+
+Мы видели в ссылке: ../ VM_INSTANCE_RETIREMENT/gupt.asciidoc [VM и экземпляр выхода на пенсию] Как индивидуальные виртуальные машины или экземпляры могут быть выходят на пенсию из их кнопки «Жизненный цикл», и мы также можем уйти в отставку с точки зрения услуг. Процесс выхода на пенсию службы следует аналогичному рабочему процессу в процессе выхода на пенсию виртуальной машины, но у нас есть гибкость, чтобы указать государственные машины для пенсионного обслуживания, если мы пожелаем.
+
+=== Defining a Service Retirement Entry Point
+
+Когда мы создаем элемент каталога услуг, мы можем при желании указать точку выхода на пенсию (см. << i1 >>).
+
+[[i1]]
+.Ssiting сервисная машина входной точки въезда
+image::images/ss3.png[Screenshot,700,align="center"]
+{zwsp} +
+
+Если мы указам нашу собственную точку выхода на пенсию, то этот штатный аппарат будет использоваться для выхода на пенсию любых услуг, созданных из этого элемента каталога. Если мы не указаем нашу собственную точку входа здесь, то будет использоваться машина пенсионного состояния _default_.
+
+=== Initiating Retirement
+
+Пенсион обслуживания инициируется из меню жизненного цикла в рамке сведений о службе (см. << i2 >>).
+
+[[i2]]
+. Сервис пенсионного меню
+image::images/ss1.png[Screenshot,400,align="center"]
+{zwsp} +
+
+Нажав на * Успеха этой службы * Повышает событие * request_service_retire *, которое начинает цепочку отношений через хранилище данных:
+
+* * request_service_retire * ->
+** _/system/event/miqevent/policy/request_service_retire_ ->
+** _/service/wearment/statemachines/methods/getretiremententrypoint_
+
+_GetRetirementEntryPoint_ Запускает метод _GET_RETIREMENT_ENTRY_POINT_, который возвращает машину точки входной точки выхода на пенсию, определенную при создании элемента каталога службы (см. << i3 >>). Если это пусто, то _/service/pelitionment/statemachines/serviceRetirement/default_ возвращается.
+
+=== Retirement-Related Attributes and Methods
+
+Объект обслуживания имеет ряд методов, связанных с выходом на пенсию:
+
+----
+$ evm.root ['service']. Automate_retirement_EntryPoint
+$ evm.root ['service']. start_retirement
+$ evm.root ['service']. Finish_retirement
+$ evm.root ['service']. retire_now
+$ evm.root ['service']. retire_service_resources
+$ evm.root ['service'].
+$ evm.root ['service']. Вышел на пенсию?
+$ evm.root ['service']. error_reting?
+$ evm.root ['service']. retirement_state =
+$ evm.root ['service']. retirement_warn =
+$ evm.root ['service']. retires_on =
+----
+
+и атрибуты:
+
+----
+$ evm.root ['service']. пенсиован = nil
+$ evm.root ['service']. retirement_last_warn = nil
+$ evm.root ['service']. retirement_requester = nil
+$ evm.root ['service']. retirement_state = nil
+$ evm.root ['service']. retirement_warn = nil
+$ evm.root ['service']. retires_on = nil
+----
+
+=== Service Retirement State Machine
+
+Машина пенсионного состояния _default_ Service проще, чем его аналог VM (см. << i3 >>)
+
+[[i3]]
+.Fields of службы службы пенсионного состояния
+image::images/ss5.png[Screenshot,500,align="center"]
+{zwsp} +
+
+==== StartRetirement
+
+Экземпляр _startretirement_ вызывает метод машины _start_retirement_, который проверяет, находится ли служба в состоянии _retired_ или _reting_, и если это так. Если ни в одном из этих состояний он не называет метод Сервиса `start_retirement`, который устанавливает атрибут` retirement_state` на «выход на пенсию».
+
+==== RetireService/CheckServiceRetired
+
+Экземпляр _retireservice_ вызывает метод машины состояния _retire_service_, который, в свою очередь, вызывает метод сервиса `stire_service_resources`. Этот метод вызывает метод `wretire_now` каждого виртуального машины, включающего Сервис, чтобы инициировать их пенсию. * Checkserviceretired* Понимает сцену, пока все виртуальные машины не станут удаленными или не удаленными.
+
+==== FinishRetirement
+
+Состояние * finishertirement * устанавливает следующие атрибуты объекта службы:
+
+----
+: retires_on => date.today
+: в отставке => True
+: retirement_state => "в отставке"
+----
+
+Это также повышает событие * service_retired *, которое может быть поймано автоматическим действием или политикой управления.
+
+==== DeleteServiceFromVMDB
+
+Экземпляр _deleteservicefromvmdb_ вызывает метод машины _delete_service_from_vmdb_, который удаляет запись службы из VMDB.
+
+=== Summary
+
+В этой главе мы видели, как процесс выхода на пенсию услуги также вызовет выход на пенсию виртуальных машин. Однако, если мы используем иерархии сервисов, или сервисы для управления рабочими нагрузками в облачном стиле в качестве отдельных сущностей, это может быть не наше желаемое поведение.
+
+К счастью, механизм выхода на пенсию обслуживания достаточно гибкий, чтобы мы могли создавать государственные машины для пенсии на услуги, которые мы можем настроить в соответствии с нашими индивидуальными вариантами использования и рабочими нагрузками.
