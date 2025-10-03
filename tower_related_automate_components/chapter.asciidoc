@@ -1,0 +1,389 @@
+[[tower-related-automate-components]]
+== Компоненты автоматизации, связанные с башней,
+
+В этой главе мы узнаем, как интегрировать Ansible Playbooks в наши автоматические рабочие процессы. Мы рассмотрим компоненты, связанные с башней, в автоматическом хранилище данных и о том, как мы можем использовать их для взаимодействия с Ansible Tower и запуска заданий. Мы также посмотрим на объекты модели обслуживания, которые представляют рабочие места башни, шаблоны рабочих мест и запасы, а также полезные характеристики каждого, к которым мы можем получить доступ из сценариев автоматизации.
+
+=== Automate Datastore Components
+
+Код автомата, связанный с башней, находится в домене _manageiq_, в рамках _configurationmanagement/ansibletower_ пространство имен. Пространство _operations_ имен содержит _jobtemplate_ и _statemachines/job_ class (см. << i1 >>).
+
+[[i1]]
+.ConfigurationManagement/AnsibleTower Пространство имен
+image::images/ss1.png[Screenshot,350,align="center"]
+{zwsp} +
+
+[NOTE]
+====
+Существует дополнительное пространство имен, которое называется _Service_ под _configurationManagement/ansibletower_, которое содержит связанные с службой компоненты автоматизации, но мы рассмотрим их в более поздней главе.
+====
+
+==== Job State Machine
+
+Класс _job_ State Machine предоставляет рабочий процесс для интеграции с Ansible Tower. В классе вне коробки есть один экземпляр под названием _default_, который содержит три состояния (см. << i2 >>).
+
+[[i2]]
+.Fields of State Machine по умолчанию
+image::images/ss3.png[Screenshot,800,align="center"]
+{zwsp} +
+
+===== WaitForIP
+
+Состояние * waitforip * вызывает метод __wait_for_ip__, который ожидает, что атрибут списка `vm.ipaddresses` не является непустым. Объект `vm` заполняется либо из` $ evm.root ['miq_provision']. Destination` (то есть виртуальная машина, полученная в результате операции по обеспечению) или `$ evm.root ['vm']` (т.е. текущий объект виртуальной машины, загруженный из работы кнопки).
+
+[NOTE]
+====
+Приглашенный агент виртуальной инфраструктуры, такой как VMware Tools или агент управления RHEV-M, должен быть установлен и запущен в целевой виртуальной машине для заполненного атрибута списка iPaddresses.
+
+Метод __wait_for_ip__ не пытается включить виртуальную машину. Если виртуальная машина не включена каким -то другим шагом рабочего процесса или ручной работой, это состояние выйдет с ошибкой после 100 повторений.
+====
+
+===== Launch
+
+* Запуск * Состояние вызывает метод __launch_ansible_job__. В этом методе используются аргументы, передаваемые `$ evm.object`, чтобы определить шаблон работы, который будет выполнен, и любые дополнительные переменные, которые должны быть переданы на работу.
+
+Для гибкости метод способен идентифицировать шаблон заданий, который будет запускать три способа, следующим образом (по порядку):
+
+1. Из значения `$ evm.object ['job_template']` Если оно существует, что должно быть объектом `managiq_providers_ansibletower_configurationmanager_configurationscript`.
+2. Из значения `$ evm.object ['job_template_name']` Если он существует, который должен быть текстовой строкой, содержащей имени шаблона задания (например, «STANTALONE SERVER TOMCAT»)
+3. Из значения `$ evm.object ['job_template_id']` Если оно существует, которая должна быть текстовой строкой, содержащей идентификатор шаблона задания (например, "342")
+
+Метод __launch_ansible_job__ также использует различные способы поиска аргументов, чтобы передать шаблон задания в качестве дополнительных переменных.
+
+1. Если машина состояния _job/default_ была вызвана как часть операции по обеспечению (и, следовательно, `$ evm.root ['miq_provision']` существует), метод __launch_ansible_job__ ищет метод предоставления задач. Если таковые были найдены, то часть извлечена `<Extra_VAR>` из имени ключа, и это и значение передаются в шаблон работы в виде дополнительных переменных.
+
+2. Метод __launch_ansible_job__ также ищет `$ evm.object` и все его родительские экземпляры до` $ evm.root` для ключей атрибутов со стилем `dialog_param_ <uster_var> = value` или` dialog <n> = <extra_var> = value`. Например, при передаче дополнительной переменной, называемой «package_name», со значением «Vim-усиление», мы могли бы использовать любой из следующих стилей:
+
+[source,ruby]
+----
+$ evm.object ['dialog_param_package_name'] = 'vim-усиленный'
+----
+
+или
+
+[source,ruby]
+----
+$ evm.object ['param1'] = 'package_name = vim-urdhanced'
+----
+
+Первый стиль позволяет нам легко предпринять дополнительные переменные из диалога услуг. В этом примере нам нужно только дать нашему элементу диалога сервиса имя «param_package_name», и значение готово передать в статусную машину.
+
+После того, как __launch_ansible_job__ успешно запустил шаблон заданий в поставщике Ansible Tower, он сохраняет идентификатор задания в качестве переменной состояния `: ansible_job_id` для справки в других местах в штате.
+
+===== WaitForCompletion
+
+* WaitforComplotion * Государство вызывает метод __wait_for_completion__. Это считывает сохраненный идентификатор задания из переменной состояния `: ansible_job_id` и опрошены поставщика Ansible Tower для статуса завершения задания.
+
+Метод выходит с `$ evm.root ['ae_result']` step to 'error', 'retry' или 'ok, как это необходимо, и печатает сообщение на _automation.log_ в случае ошибки.
+
+==== Calling the State Machine from an Automate Method
+
+Мы можем легко запустить шаблон заданий Ansible Tower на любой виртуальной машине из метода автоматизации.
+
+В этом примере мы запустим шаблон работы под названием «Установить отдельный пакет» на виртуальной машине под названием «Testserver». Мы передаем шаблон задания дополнительную переменную «package_name» с экраном значения «. Чтобы предотвратить продолжительность работы Ansible Playbook от выхода из нашего в настоящее время запущенного метода, мы запустим машину AnsibleTower State в качестве нового запроса на автоматизацию, а не использовать `$ evm.Instantiate '. Поскольку новый метод не будет работать как часть операции подготовки и не вызывается из кнопки на виртуальной машине в Webui, мы должны убедиться, что объект виртуальной машины загружен в `$ evm.root ['vm'] во время выполнения. Мы делаем это, передавая аргумент «VM: VM», содержащий идентификатор объекта VM, который мы хотим загрузить, как показано в следующем коде:
+
+[source,ruby]
+----
+ANSIBLE_NAMESPACE = 'ConfigurationManagement/ANSIBLETOWER/OPERATIONS/STATEMACHINES'.Freeze
+ANSIBLE_STATE_MACHINE_CLASS = 'job'.freeze
+Ansible_state_machine_instance = 'default'.freeze
+Vm_class = 'vmortemplate'.freeze
+attrs = {}
+attrs ['job_template_name'] = 'Установить отдельный пакет'
+attrs ['dialog_param_package_name'] = 'экран'
+#
+# Передача атрибута vm :: vm = id гарантирует, что выполненный метод будет
+# иметь $ evm.root ['vm'], предварительно загруженная с виртуальной машиной с этим идентификатором
+#
+vm = $ evm.vmdb (vm_class) .find_by_name ('testserver')
+attrs ['vm :: vm'] = vm.id
+#
+# Убедитесь, что виртуальная машина запускается
+#
+vm.start, если vm.power_state! = 'on'
+#
+# Позвоните в шаблон работы в качестве нового запроса на автоматизацию на случай, если он работает за
+# дольше 10 минут
+#
+Options = {}
+Options [: namespace] = ansible_namespace
+Options [: class_name] = ansible_state_machine_class
+Options [: exance_name] = ansible_state_machine_instance
+Options [: user_id] = $ evm.root ['user']. ID
+параметры [: attrs] = attrs
+auto_approve = true
+$ evm.execute ('create_automation_request', параметры, $ evm.root ['user']. userId, auto_approve)
+----
+
+Вместо того, чтобы передавать атрибут «job_template_name», мы могли бы, если мы хотели бы пройти job_template_id '. Например, мы, возможно, были переданы идентификатор шаблона из диалога услуг, или у нас могут быть несколько поставщиков башни Ansible с дублирующими именами шаблонов рабочих мест и желаем определить правильный шаблон. Следующий код показывает, как мы будем искать и указать идентификатор шаблона задания для шаблона работы на конкретного поставщика (в данном случае у поставщика есть идентификатор 4):
+
+[source,ruby]
+----
+Script_class = 'Manageiq_providers_ansibletower_configurationManager_ConfigurationScript'.freeze
+job_template = $ evm.vmdb (script_class). Где (
+                ["manager_id = ? AND name = ?", 4, 'Install Single Package']
+).первый
+attrs ['job_template_id'] = job_template.id
+----
+
+==== Calling the State Machine from an Instance
+
+Мы можем позвонить в машину состояния _job/default_ непосредственно из отношений в экземпляре и даже передать дополнительные аргументы с атрибутами схемы. Это дает нам гибкость, чтобы иметь возможность объединять методы Ruby и Ansible Playbooks в одном экземпляре, если мы желаем (см. << i3 >>).
+
+[[i3]]
+. Комбинирование Ruby Methods и Ansible Playbooks в одном экземпляре
+image::images/ss6.png[Screenshot,800,align="center"]
+{zwsp} +
+
+[[job_template_class]]
+==== JobTemplate Class
+
+Класс JobTemplate был создан для упрощения процесса вызова Ansible Job -шаблонов без необходимости для каких -либо сценариев Ruby. Мы можем назвать этот класс, используя URI отношения, который заканчивается именем шаблона задания. Пример, показывающий поле отношений, вызывающее шаблон задания «jboss_standalone_server», показан в << i4 >>.
+
+[[i4]]
+. Нажатие jboss_standalone_server ansible шаблон работы
+image::images/ss4.png[Screenshot,800,align="center"]
+{zwsp} +
+
+Если в классе JobTemplate нет экземпляра с тем же именем, что и шаблон задания (в этом примере "jboss_standalone_server"), будет вызовен экземпляр _.missing_ (см. << i5 >>).
+
+[[i5]]
+.Fields of the .missing Extance
+image::images/ss2.png[Screenshot,550,align="center"]
+{zwsp} +
+
+В экземпляре _.missing_ используется переведенная `$ {#_ Missing_instance}` переменная замены (которая в этом примере будет содержать строку "jboss_standalone_server") в качестве значения для атрибута * job_template_name *. Затем экземпляр запускает машину состояния __job/default__ из поля * запуска *.
+
+[NOTE]
+====
+Чтобы воспользоваться поведением _.missing_ экземпляра таким образом, наше имя шаблона работы не должно содержать пробелов. Дополнительные переменные по умолчанию будут использоваться при выполнении задания (мы не можем передать параметры в шаблон задания).
+====
+
+===== User-defined JobTemplate Instances
+
+Если у нас есть шаблоны рабочих мест, которые мы регулярно называем с помощью дополнительных переменных переопределения, или которые содержат пробелы в имени шаблона, мы можем определить наши собственные экземпляры под _/configurationalmange/ansiblethower/operations/jobtemplate_ в пользовательском домене (см. << i5 >>).
+
+[[i5]]
+.User-defined JobTemplate instances
+image::images/ss5.png[Screenshot,700,align="center"]
+{zwsp} +
+
+Эти пользовательские экземпляры могут затем быть вызваны обычным способом.
+
+==== /System/Request/ansible_tower_job
+
+Существует точка входа в соответствии с _/System/request_ Calling __ansible_tower_job__, которую мы можем позвонить из любого компонента WebUI, который ожидает точки входа в _/system/request_ (например, кнопка). Эта точка записи содержит единое отношение к __/configurationalmange/ansibletower/operations/statemachines/job/default__, поэтому мы должны передавать дополнительные аргументы, такие как "job_template_name" в виде атрибута/значения.
+
+=== Service Models
+
+Есть несколько моделей обслуживания, которые представляют нам интерес, когда мы используем возможности Ansible Tower из наших сценариев автоматизации.
+
+==== ManageIQ_Providers_AnsibleTower_ConfigurationManager_Job
+
+Объект ManageIQ_Providers_ansibletower_configurationManager_job представляет собой задание Ansible Tower. Распечатка Object_Walker типичного объекта выглядит следующим образом:
+
+```
+--- attributes follow ---
+job.ancestry = nil
+job.cloud_tenant_id = nil
+job.created_at = 2016-11-23 17:38:00 UTC
+job.description = nil
+job.ems_id = 4
+job.ems_ref = 145
+job.id = 49
+job.name = jboss_standalone_server
+job.orchestration_template_id = 5
+job.resource_group = nil
+job.retired = nil
+job.retirement_last_warn = nil
+job.retirement_requester = nil
+job.retirement_state = nil
+job.retirement_warn = nil
+job.retires_on = nil
+job.status = ожидание
+job.status_reason = nil
+Job.Type = Manageiq :: Providers :: AnsibleTower :: ConfigurationManager :: Job
+job.updated_at = 2016-11-23 17:38:00 UTC
+--- end of attributes ---
+--- virtual columns follow ---
+job.region_description = область 0
+job.region_number = 0
+job.total_cloud_networks = 0
+job.total_security_groups = 0
+job.total_vms = 0
+--- end of virtual columns ---
+--- associations follow ---
+job.ext_management_system
+job.job_template
+job.outputs
+job.parameters
+job.resources
+--- end of associations ---
+--- methods follow ---
+job.add_to_service
+job.error_reting?
+job.finish_retirement
+job.inspect
+job.inspect_all
+job.model_suffix
+job.normalized_live_status
+job.raw_delete_stack
+job.raw_exists?
+job.raw_stdout
+job.raw_update_stack
+job.refresh_ems
+job.reeload
+job.remove_from_vmdb
+job.retire_now
+job.retied?
+job.retirement_state =
+job.retirement_warn =
+job.retires_on =
+job.reting?
+job.start_retirement
+job.tag_assign
+job.tag_unassign
+job.tagged_with?
+job.tags
+--- end of methods ---
+--- object does not support custom attributes ---
+```
+
+Из этого списка мы замечаем несколько полезных свойств. Есть несколько интересных атрибутов, в том числе:
+
+* `job.ems_ref` соответствует идентификатору задания в башне Ansible.
+* `job.orchestration_template_id` - это идентификатор CloudForms/Manageiq шаблона задания Ansible Tower
+* `job.status`, это статус работы, но это не обязательно текущее (см.` normalized_live_status` ниже)
+
+
+Ассоциация `job.parameters 'представляет собой список объектов модели обслуживания OrchestrationStackParameter, представляющих параметры (то есть дополнительные переменные), которые использовались при выполнении задания. Типичные атрибуты объекта параметра следующие:
+
+```
+parameter.ems_ref = 145_http_port
+параметр.id = 260
+parameter.name = http_port
+параметр.stack_id = 49
+Параметр.value = 80
+```
+
+Есть несколько полезных методов Manageiq_providers_ansibletower_configurationManager_job, которые мы можем позвонить, включая:
+
+* `job.normalized_live_status` вернет текущий статус работы в качестве массива [статус, разум] из башни Ansible.  Это метод, который __/ConfigurationManagement/Ansiblethower/Operations/StateMachines/job/wait_for_completion__ вызовы для определения статуса задания, и типичные значения могут быть ["create_complete", "ok"] или [«не удалось», «запуск задания не удастся»].
+* `job.raw_stdout` вернет необработанные результаты с задания, например:
+
+```
+"Identity added: /tmp/ansible_tower_Qa8enO/credential (/tmp/ansible_tower_Qa8enO/credential)\r\nVault password: \r\n\r\nPLAY [Install Package] *********************************************************\r\n\r\nTASK [setup] ***********************************************************
+```
+
+Из методов, связанных с тегом, мы видим, что объект Manageiq_providers_ansibletower_configurationmanager_job является меткой.
+
+==== MIQ_Providers_AnsibleTower_ConfigurationManager_ConfigurationScript
+
+Объект ManageIQ_PROVIDERS_ANSIBLETOWER_CONFIGUURATIONGRATIONCICTSICT представляет шаблон задания ANSIBLE. Распечатка Object_Walker типичного объекта выглядит следующим образом:
+
+```
+--- attributes follow ---
+configuration_script.created_at = 2016-11-18 16:20:17 UTC
+configuration_script.description = установить автономный сервер JBoss
+configuration_script.id = 5
+configuration_script.inventory_root_group_id = 8
+configuration_script.manager_id = 4
+configuration_script.manager_ref = 48
+configuration_script.name = jboss_standalone_server
+configuration_script.survey_spec = {}
+configuration_script.type = Manageiq :: Providers :: AnsibleTower :: ConfigurationManager ... Script
+configuration_script.updated_at = 2016-11-23 17:37:25 UTC
+configuration_script.variables = {"http_port" => 80, "https_port" => 443}
+--- end of attributes ---
+--- virtual columns follow ---
+configuration_script.region_description = область 0
+configuration_script.region_number = 0
+--- end of virtual columns ---
+--- associations follow ---
+configuration_script.inventory_root_group
+configuration_script.manager
+--- end of associations ---
+--- methods follow ---
+configuration_script.inspect
+configuration_script.inspect_all
+configuration_script.model_suffix
+configuration_script.reload
+configuration_script.run
+configuration_script.tag_assign
+configuration_script.tag_unassign
+configuration_script.tagged_with?
+configuration_script.tags
+--- end of methods ---
+--- object does not support custom attributes ---
+```
+
+Из этого объекта мы можем увидеть ряд полезных свойств, включая следующие атрибуты:
+
+* `configuration_script.properties`, который представляет собой хэш, содержащий дополнительные переменные по умолчанию, которые были определены для шаблона задания в башне Ansible (мы можем отобразить их как элементы по умолчанию в диалоговом окне службы).
+* `configuration_script.manager_ref` - это идентификатор башни Ansible для шаблона задания.
+
+Ассоциация `configuration_script.inventory_root_group` содержит объект Manageiq_providers_configurationManager_inventoryRootGroup, который представляет инвентаризацию башни, с которым определяется шаблон задания для выполнения (см. Ниже).
+
+Мы видим, что объект Manageiq_providers_ansibletower_configurationManager_ConfigurationScript также также помечен.
+
+==== ManageIQ_Providers_ConfigurationManager_InventoryRootGroup
+
+Объект ManageIQ_Providers_configurationManager_InventoryRootGroup представляет собой инвентаризацию Ansible Tower. Распечатка Object_Walker типичного объекта выглядит следующим образом:
+
+```
+--- attributes follow ---
+inventory_root_group.created_on = 2016-10-19 15:38:35 UTC
+inventory_root_group.ems_id = 4
+inventory_root_group.ems_ref = 4
+inventory_root_group.ems_ref_obj = nil
+inventory_root_group.hidden = nil
+inventory_root_group.id = 8
+inventory_root_group.name = cloudforms VMS
+inventory_root_group.type = Manageiq :: Providers :: ConfigurationManager :: InventoryRootGroup
+inventory_root_group.uid_ems = nil
+inventory_root_group.updated_on = 2016-10-19 15:38:35 UTC
+--- end of attributes ---
+--- virtual columns follow ---
+inventory_root_group.aggregate_cpu_speed = 0
+inventory_root_group.aggregate_cpu_total_cores = 0
+inventory_root_group.aggregate_disk_capacity = 0
+inventory_root_group.aggregate_logical_cpus = 0
+inventory_root_group.aggregate_memory = 0
+inventory_root_group.aggregate_physical_cpus = 0
+inventory_root_group.aggregate_vm_cpus = 0
+inventory_root_group.aggregate_vm_memory = 0
+inventory_root_group.region_description = область 0
+inventory_root_group.region_number = 0
+inventory_root_group.total_configured_systems = 15
+--- end of virtual columns ---
+--- associations follow ---
+inventory_root_group.configuration_scripts
+inventory_root_group.hosts
+inventory_root_group.manager
+inventory_root_group.vms
+--- end of associations ---
+--- methods follow ---
+inventory_root_group.folder_path
+inventory_root_group.inspect
+inventory_root_group.inspect_all
+inventory_root_group.model_suffix
+inventory_root_group.register_host
+inventory_root_group.reload
+inventory_root_group.tag_assign
+inventory_root_group.tag_unassign
+inventory_root_group.tagged_with?
+inventory_root_group.tags
+--- end of methods ---
+--- object does not support custom attributes ---
+```
+
+Наиболее полезными свойствами из этого объекта являются `inventory_root_group.name` и` inventory_root_group.ems_ref`, который является идентификатором башни для инвентаря.
+
+Как и в случае с двумя другими объектами, объект Manageiq_providers_configurationManager_InventoryRootGroup также является метки.
+
+=== Summary
+
+В этой главе изучались функции автоматизации, представленной в CloudForms 4.1/Manageiq _Darga_, которые позволяют нам интегрироваться с Ansible Tower. Они позволяют нам легко вызывать задания по башне, либо из метода работающего автомата Ruby, либо из простого отношения экземпляра. Нам не обязательно нужно писать какой -либо код Ruby, чтобы запустить задание Ansible Tower, мы можем просто создать класс и экземпляр в автоматическом хранилище данных и вызвать это из кнопки, или - как мы увидим в более поздней главе - в качестве сервиса.
+
+==== Further Reading
+
+http://talk.manageiq.org/t/launching-ansible-tower-job-templates-from-manageiq/1394= Шаблоны задания башни из Manageiq]
