@@ -1,0 +1,288 @@
+[[service-hierarchies]]
+== иерархии обслуживания
+
+Мы видели, как каталоги сервисов, состоящие из элементов каталога и пакетов, могут упростить процесс заказа инфраструктуры или экземпляра облаков и виртуальных машин. Однако простота заказа - не единственное преимущество услуг.
+
+Когда мы заказываем одну или несколько виртуальных машин из каталога услуг, для нас создается новый _service_, который появляется во всех службах * в Webui. Эта услуга дает нам полезную резюме своих ресурсов в разделе «Всего за сервисные виртуальные машины». Мы можем использовать эту функцию, чтобы расширить утилиту услуг в отслеживание и организацию ресурсов. Мы могли бы, например, использовать сервис для представления проекта, включающего много десятков виртуальных машин. Мы сможем увидеть общее потребление ресурсов виртуальной машины для всего проекта в одном месте в WebUI.
+
+В соответствии с этим организационным использованием мы можем организовать услуги в иерархиях для дальнейшего удобства (см. << i1 >>).
+
+[[i1]]
+. Иерархия обслуживания
+image::images/ss1.png[Screenshot,370,align="center"]
+{zwsp} +
+
+В этом примере у нас есть три детских служба, представляющие три уровня нашей простой интранет -платформы. << i2 >> показывает один сервер, создающий уровень базы данных нашей архитектуры.
+
+[[i2]]
+.The database tier
+image::images/ss2.png[Screenshot,700,align="center"]
+{zwsp} +
+
+<< i3 >> показывает два сервера, составляющие уровень промежуточного программного обеспечения нашей архитектуры.
+
+[[i3]]
+.The middleware tier
+image::images/ss3.png[Screenshot,700,align="center"]
+{zwsp} +
+
+<< i4 >> показывает четыре сервера, составляющие веб -уровень нашей архитектуры.
+
+[[i4]]
+. Веб -уровень
+image::images/ss4.png[Screenshot,700,align="center"]
+{zwsp} +
+
+Когда мы рассматриваем родительскую службу, мы видим, что она содержит подробную информацию обо всех детских службах, включая кумулятивный процессор, количество памяти и дисков (см. << i5 >>).
+
+[[i5]]
+.PAPRENT Service View
+image::images/ss5.png[Screenshot,700,align="center"]
+{zwsp} +
+
+=== Organising Our Services
+
+Чтобы максимально использовать иерархии обслуживания, полезно иметь возможность создавать пустые услуги и иметь возможность перемещать как службы, так и виртуальные машины в существующие службы.
+
+==== Creating an Empty Service
+
+Мы могли бы создать новую службу непосредственно из автоматизации, используя строки:
+
+[source,ruby]
+----
+new_service = $ evm.vmdb ('service'). Create (: name => "My New Service")
+new_service.display = true
+----
+
+Однако для этого примера мы создадим наш новый пустой сервис из каталога услуг.
+
+===== State machine
+
+Сначала мы скопируем _manageiq/service/provisioning/statemachines/serviceprovision_template/default_ в наш собственный домен и переименовать его _emptyservice_. Мы добавим отношение * pre5 * к новому экземпляру, который мы создаем, называем __/service/provisioning/statemachines/methods/rename_service__ (см. << i6 >>).
+
+[[i6]]
+.Fields of the Pellyservice State Machine
+image::images/ss6.png[Screenshot,600,align="center"]
+{zwsp} +
+
+===== Method
+
+* Pre5 * Стадия этой государственной машины - это отношение к экземпляру __rename_service__. Этот экземпляр вызывает метод __rename_service__, содержащий следующий код:
+
+[source,ruby]
+----
+начинать
+service_template_provision_task = $ evm.root ['service_template_provision_task']
+service = service_template_provision_task.destination
+dialog_options = service_template_provision_task.dialog_options
+Если dialog_options.has_key? 'dialog_service_name'
+service.name = "#{dialog_options ['dialog_service_name']}"
+конец
+Если dialog_options.has_key? 'dialog_service_description'
+service.description = "#{dialog_options ['dialog_service_description']}"
+конец
+
+$ evm.root ['ae_result'] = 'ok'
+Выход miq_ok
+rescue => err
+$ evm.log (: error, "[#{err}] \ n#{err.backtrace.join (" \ n ")}")
+$ evm.root ['ae_result'] = 'ошибка'
+$ evm.root ['ae_reason'] = "ошибка: #{err.message}"
+Выход miq_error
+конец
+----
+
+===== Service dialog
+
+Мы создаем простого диалогового службы под названием «Новая служба» с именами элементов*service_name*и ** service_description ** (см. << i7 >>).
+
+[[i7]]
+. Сервис диалог
+image::images/ss7.png[Screenshot,450,align="center"]
+{zwsp} +
+
+===== Putting it all together
+
+Наконец, мы собираем все эти части, создав новый каталог услуг под названием ** General Services **, новый элемент каталога типа ** generic ** под названием _Empty service_ (см. << i8 >>).
+
+[[i8]]
+. Заполненный элемент каталога услуг «Пустое обслуживание»
+image::images/ss8.png[Screenshot,550,align="center"]
+{zwsp} +
+
+Мы можем заказать этот элемент каталога услуг для создания наших новых пустых сервисов.
+
+=== Adding VMs and Services to Existing Services
+
+Мы предоставим возможность перемещать как услуги, так и виртуальные машины в существующие сервисы, с кнопки. Кнопка представит раскрывающий список существующих услуг, которые мы можем добавить в качестве новой родительской службы (см. << i9 >>).
+
+[[i9]]
+.Listing доступные услуги в динамичном раскрывающемся списке
+image::images/ss9.png[Screenshot,450,align="center"]
+{zwsp} +
+
+==== Adding the Button
+
+Как и прежде, процесс добавления кнопки включает в себя создание диалогового окна кнопки и скрипт кнопки. Однако для этого примера наш диалог будет содержать динамический раскрывающийся список, поэтому мы должны также создать метод динамического элемента, чтобы заполнить этот список.
+
+===== Button Dialog
+
+Мы создаем простого диалогового окна кнопки с динамичным раскрывающимся элементом с именем ** Service ** (см. << i10 >>).
+
+[[i10]]
+. Боттон диалог
+image::images/ss10.png[Screenshot,600,align="center"]
+{zwsp} +
+
+===== Dialog element method
+
+Динамический раскрывающийся элемент в диалоговом окне службы вызывает метод под названием _List_services_. Мы хотим отобразить сервис в раскрывающемся списке только в том случае, если у пользователя есть разрешения на ее просмотр через их членство в арендаторе и фильтр управления доступом на основе ролей (RBAC). Мы определяем три метода; `get_visible_tenant_ids`, чтобы получить нашего арендатора и любых идентификаторов арендатора; `get_current_group_rbac_array`, чтобы получить массив фильтров RBAC пользователя и` service_visible? `Чтобы проверить, что у сервиса есть тег, соответствующий фильтру. Код заключается в следующем:
+
+[source,ruby]
+----
+def get_visible_tenant_ids
+Tenant_ancestry = []
+Tenant_ancestry << $ evm.root ['арендатор']. Id
+$ evm.vmdb (: арендатор). Все
+Если endant.ancestry.nil?
+предки = arenant.ancestry.split ('/')
+Если предки.
+Tenant_ancestry << tenant.id
+конец
+конец
+конец
+Tenant_ancestry
+конец
+
+def get_current_group_rbac_array (rbac_array = [])
+user = $ evm.root ['user']
+Если user.current_group.filters.blank?
+user.current_group.filters ['Managed']. Flatten.each Do | Filter |
+Далее, если/(? <Категория> \ w*) \//(?
+rbac_array << {Category => Tag}
+конец
+конец
+rbac_array
+конец
+   
+def service_visible? (visible_tenants, rbac_array, service)
+Видимо = ложь
+$ evm.log (: info "Оценка службы #{service.name}")
+Если visible_tenants.include? (service.tenant.id)
+Если rbac_array.length.zero?
+Видимо = верно
+еще
+RBAC_ARRAY.ERO DO | RBAC_HASH |
+RBAC_HASH.ERO DO | Категория, TAG |
+if service.tagged_with? (Категория, тег)
+Видимо = верно
+конец
+конец
+конец
+конец
+конец
+видимый
+конец
+----
+
+Когда мы перечисляем службы, мы проверяем видимость пользователю перед добавлением в раскрывающий список:
+
+[source,ruby]
+----
+rbac_array = get_current_group_rbac_array
+visible_tenants = get_visible_tenant_ids
+values_hash = {}
+visible_services = []
+  
+$ evm.vmdb (: service). Все
+Если Service ['Display']
+Если Service_visible? (Visible_tenants, rbac_array, Service)
+visible_services << Сервис
+конец
+конец
+конец
+Если visible_services.length> 0
+Если visible_services.length> 1
+values_hash ['!'] = '-выберите из списка-'
+конец
+visible_services.ed Do | Service |
+values_hash [service.id] = service.name
+конец
+еще
+values_hash ['!'] = 'Службы не доступны'
+конец
+----
+
+Здесь мы используем простую технику сохранения строки «-выберите список-« В верхней части списка, используя строку ключа «!» который является первым символом для печати ASCII.
+
+[[button-method]]
+===== Button method
+
+Основной экземпляр и метод, вызванные из кнопки, называются _ADD_TO_SERVICE_. Этот метод добавляет текущую виртуальную машину или службу в службу, выбранную из раскрывающегося списка. Поскольку мы хотим иметь возможность вызвать это из кнопки на типе объекта _service_ или типа объекта _vm и exaction_, мы идентифицируем наш контекст, используя `$ evm.root ['vmdb_object_type']`.
+
+Если мы добавляем виртуальную машину в существующую услугу, мы должны разрешить тот факт, что виртуальная машина сама по себе была предоставлена ​​из услуги. Мы обнаруживаем любое существующее членство в обслуживании, и если старая служба пуста после перемещения виртуальной машины, мы удаляем сервис из VMDB:
+
+[source,ruby]
+----
+начинать
+new_service_id = $ evm.root ['dialog_service']
+new_service = $ evm.vmdb ('service', new_service_id) rescue nil
+Если new_service.nil?
+$ evm.log (: error, "Не могу найти службу с id: #{new_service_id}")
+Выход miq_error
+еще
+case $ evm.root ['vmdb_object_type']
+Когда «сервис»
+$ evm.log (: info, "добавление службы #{$ evm.root ['service']. Имя}
+to #{new_service.name} ")
+$ evm.root ['service']. parent_service = new_service
+Когда 'vm'
+vm = $ evm.root ['vm']
+      #
+# Посмотрите, является ли виртуальная машина уже частью сервиса
+      #
+Если только vm.service.nil?
+Old_service = Vm.service
+vm.remove_from_service
+Если Old_service.v_total_vms.zero?
+$ evm.log (: info "Old Service #{old_service.name} теперь пуст,
+Удаление его из VMDB ")
+old_service.remove_from_vmdb
+конец
+конец
+$ evm.log (: info, "добавление vm #{vm.name} в #{new_service.name}")
+vm.add_to_service (new_service)
+      #
+# Установите владение виртуальной машиной, чтобы быть таким же, как новая группа
+      #
+Vm.Owner = $ evm.vmdb (: user) .find_by_id (new_service.evm_owner_id)
+Если только new_service.evm_owner_id.nil?
+vm.group = $ evm.vmdb (: miq_group) .find_by_id (new_service.miq_group_id)
+Если только new_service.miq_group_id.nil?
+конец
+конец
+Выход miq_ok
+rescue => err
+$ evm.log (: error, "[#{err}] \ n#{err.backtrace.join (" \ n ")}")
+Выход miq_error
+конец
+----
+
+Сценарии в этой главе являются доступной ссылкой: https: //github.com/pemcg/mastering-automation-in-cloudforms-4.2-and-manageiq-euwe/tree/master/service_hierarchies/scripts [здесь]
+
+===== Putting it all together
+
+Наконец, мы создаем две кнопки «Добавить в службу», одну на тип объекта _service_ и одну на тип объекта _vm и exaction_. Мы можем пойти дальше и организовать наши иерархии услуг.
+
+[NOTE]
+====
+__Упражнение__
+
+Отфильтруйте список служб, представленных в раскрывающемся списке, чтобы удалить службу _current_ - мы никогда не хотели бы добавить услугу в качестве своего собственного родителя.
+====
+
+=== Summary
+
+Организация наших услуг таким образом меняет способ, которым мы думаем о нашей облаке или виртуальной инфраструктуре. Мы начинаем думать с точки зрения рабочих нагрузок, а не отдельных виртуальных машин или экземпляров. Мы можем начать работать более «облачным» способом, где мы относимся к нашим виртуальным машинам как к анонимным объектам, а также масштабируются или масштабируются в соответствии с спросом на приложения времени.
+
+Мы также можем использовать сервисные пакеты и иерачи пучков, чтобы отслеживать ресурсы в проектах и ​​подпроектах. Это может помочь с организационной точки зрения, например, мы можем пометить услуги, и наш метод добавления виртуальной машины в сервис может распространить любые теги услуг на виртуальную машину. Таким образом, мы можем назначить связанные с проектом расходы на возврат платежного платежа на тегированные виртуальные машины или применить фильтры отображения WebUI, которые отображают ресурсы проекта.

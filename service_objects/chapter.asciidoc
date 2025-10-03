@@ -1,0 +1,182 @@
+[[service-objects]]
+== Объекты обслуживания
+
+Мы видели в ссылке: ../ vm_provisioning_objects/gupt.asciidoc [объекты VM Provisioning], что операции предоставления всегда включают объект _request_ и объект _task_, который ссылается на _source_ и _destination_.
+
+Когда мы предоставляем виртуальную машину из сервиса, есть гораздо больше объектов, потому что мы создаем и ссылаемся на большее количество элементов (создавая как услугу, так и потенциально несколько новых компонентов VMS). Когда мы предоставляем от службы _bundle_, будет несколько отдельных _items_ для предоставления как часть пакета. Однако даже когда мы предоставляем из одной службы _item_, объекты структурированы так, как если бы мы давали пакет, содержащий только один элемент.
+
+В этой главе мы рассмотрим некоторые объекты, участвующие в предоставлении одной виртуальной машины из элемента каталога услуг. Объекты видны нам во время обработки машины _catalogiteminitialization_ состояния.
+
+Для этого примера:
+
+* Мы используем CloudForms 4.1
+* Поставщик
+* Имя элемента каталога услуг, из -за которого мы заказали, называется «RHEL 7.2 Server (TREV)»
+* Предмет каталога услуг был создан для клона из шаблона RHEV под названием «RHEL72-Generic»
+* Новое название услуги - «Мой новый сервис»
+* Полученная служба содержит виртуальную машину под названием Test05.
+
+Мы можем использовать _object_walker_ со следующим `walk_association_whitelist`, чтобы сбросить объекты:
+
+[source,ruby]
+----
+{'MiqaeserviceserviceTemplateProvisionTask': ['Source',
+'место назначения',
+'miq_request',
+'miq_request_tasks',
+'service_resource'],
+'MiqaeserviceserserSource': ['resource', 'service_template'],
+'Miqaeservicemiqprovisionrequesttemplate': ['source', 'destination'],
+'Miqaeservicemanageiq_providers_redhat_inframanager_provision': ['Source', 'destination'],
+'Miqaeservicemanageiq_providers_redhat_inframanager_vm': ['service']}
+----
+
+Мы позвоним в экземпляр object_walker из * post5 * wation/stage каталогизированной машины состояния.
+
+=== Object Structure
+
+Мы можем проиллюстрировать основную структуру объекта в << i1 >> (некоторые объекты и ссылки/отношения были опущены для ясности).
+
+[[i1]]
+. Сервис объект отношения
+image::images/service_objects.png[Service Objects,750,align="center"]
+{zwsp} +
+
+==== Service Template Provision Task
+
+Наша точка входа в структуру объекта от `$ evm` является основным объектом _servicetemplateProvisionTask_. Мы получаем доступ к этому:
+[source,ruby]
+....
+$ evm.root ['service_template_provision_task']
+....
+Отсюда мы можем получить доступ к любому из других объектов, следуя ассоциациям.
+
+===== Source
+
+Доступ от:
+[source,ruby]
+....
+$ evm.root ['service_template_provision_task']. Source
+....
+Это объект _servicetemplate_, представляющий элемент каталога услуг, который был заказан.
+
+===== Destination
+
+Доступ от:
+[source,ruby]
+....
+$ evm.root ['service_template_provision_task']. назначение
+....
+Это объект _service_, представляющий новую службу, которая будет создана в рамках _my services_.
+
+==== Service Template Provisioning Request
+
+Доступ от:
+[source,ruby]
+....
+$ evm.root ['service_template_provision_task']. Miq_request
+....
+Это начальный объект _servicetemplateProvisionRequest_, который был создан, когда мы впервые заказали новую службу. Это объект запроса для всей операции предоставления услуг, включая все виртуальные машины, созданные как часть Сервиса. Этот объект запроса имеет ассоциации с каждым из объектов задачи, участвующих в сборке Сервиса, и они, в свою очередь, имеют обратные ссылки на этот объект запроса.
+
+==== Child miq_request_task
+
+Доступ от:
+[source,ruby]
+....
+$ evm.root ['service_template_provision_task']. miq_request_tasks.each do | Child_task |
+....
+Это также объект _serviceTemplateProvisionTask_ и является объектом задачи, который представляет создание элемента для новой службы. Для каждого элемента (например, виртуальная машина) будет ребенок MIQ_REQUEST_TASK, который составляет окончательный сервис, поэтому для пакета обслуживания, содержащего три виртуальных машины, будут три ребенка MIQ_REQUEST_TASKS.
+
+===== Service resource
+
+Доступ от:
+[source,ruby]
+....
+child_task.service_resource
+....
+Этот объект _serviceresource_ хранит подробности об этом конкретном элементе службы и его месте в общей структуре обслуживания. У объекта _serviceresource_ есть атрибуты, такие как:
+
+[source,ruby]
+....
+service_resource.group_idx
+service_resource.provision_index
+...
+service_resource.start_action
+service_resource.start_delay
+service_resource.stop_action
+service_resource.stop_delay
+....
+
+Обычно они представляют собой нулевое или _nil_ для службы с одним элементом, но представляют значения, выбранные в Webui для пакета услуг с несколькими элементами (см. << i1 >>).
+
+[[i1]]
+. Начните и остановите действия и задержки в многоэлементном пакете
+image::images/ss1.png[Screenshot,450,align="center"]
+{zwsp} +
+
+Сервисный ресурс имеет отношение к объекту _servicetemplate_ через `child_task.service_resource.service_template`.
+
+===== Source
+
+Доступ от:
+[source,ruby]
+....
+child_task.source
+....
+или
+[source,ruby]
+....
+child_task.service_resource.resource
+....
+Это объект _miqprovisionrequesttemplate_, который описывает, как будет создана результирующая виртуальная машина. Объект выглядит очень похожим на традиционный объект запроса VM -обеспечения и содержит варианты, заполненные вариантами диалога, которые были выбраны при создании элемента службы (например, параметры размещения, размер памяти, процессоров и т. Д.).
+
+===== Destination
+
+Доступ от:
+[source,ruby]
+....
+child_task.destination
+....
+Это тот же объект _service_, который доступен из `$ evm.root ['service_template_provision_task']. Destination`.
+
+==== Grandchild miq_request_task
+
+Доступ от:
+[source,ruby]
+....
+child_task.miq_request_tasks.each do | Grandchild_task |
+....
+Это _manageiq_providers_redhat_inframanager_provision_ miq_request_task объект и является объектом задачи, который представляет создание виртуальной машины. Это точно так же, как объект задачи, описанный в << VM-provisioning-objects >>.
+
+Это внук miq_request_task, который содержит хэш вариантов для предоставления виртуальной машины; Это клонировано из хэша параметров в объекте _miqprovisionrequesttemplate_. Если у нас есть диалог услуг, который подсказывает свойства, влияющие на предоставленную виртуальную машину (например, имя виртуальной машины, количество процессоров, память и т. Д.), Мы должны передать эти значения диалога в варианты задачи внука.
+
+===== Source
+
+Доступ от:
+[source,ruby]
+....
+Grandchild_task.source
+....
+Это объект _manageiq_providers_redhat_inframanager_template_, который представляет шаблон RHEV, от которого будет клонирована новая виртуальная машина.
+
+===== Destination
+
+Доступ от:
+[source,ruby]
+....
+Grandchild_task.destination
+....
+или
+[source,ruby]
+....
+Grandchild_task.vm
+....
+Это объект _manageiq_providers_redhat_inframanager_vm_, который представляет недавно созданную виртуальную машину. Этот объект VM имеет ассоциацию `service ', которая ссылается на недавно созданный объект службы.
+
+=== Summary
+
+В этой главе мы подробно рассмотрели различные объекты, которые участвуют в обеспечении виртуальной машины из сервиса. Это объект представления из любого метода, работающего в рамках состояния услуг.
+
+Самый низкий уровень объектов в << i1 >> - внука miq_request_task с его объектами источника и назначения - соответствует объектам, предоставляемым виртуальной машиной, которые мы обсуждали в ссылке: ../ vm_provisioning_objects/guple.asciidoc [VM Provisioning Objects]. Когда статус управления услугами передает машину государственного обеспечения VM, это действительно объекты, на которые ссылаются на этом последнем этапе, как и любой другой рабочий процесс предоставления виртуальной машины. Любые методы машинного состояния виртуальной машины, которые мы, возможно, написали, что доступ к атрибутам этих объектов не увидит никакой разницы. Единственное изменение заключается в типе объекта запроса; `$ evm.root ['miq_provision']. miq_provision_request` в данном случае будет объектом Service_template_provision_Request.
+
+
