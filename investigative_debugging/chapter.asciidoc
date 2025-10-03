@@ -1,0 +1,226 @@
+[[investigative-debugging]]
+== Расследовательская отладка
+
+Как мы видели в ссылке: ../ peeping_under_the_hood/gupt.asciidoc [Peeping под капотом], есть много полезной информации в форме атрибутов объекта модели службы и виртуальных столбцов, ссылок на другие объекты через ассоциации и методы модели службы, которые мы можем позвонить. Иногда задача состоит в том, чтобы знать, какие объекты доступны для нас в какой -либо конкретной точке нашего рабочего процесса, и как получить доступ к их свойствам и ассоциации, чтобы найти необходимую нам информацию.
+
+К счастью, есть несколько способов изучения структуры объектов в движке автоматизации, как для изучения того, что может быть доступно для использования, так и для отладки и устранения устранения устранения нашего собственного кода автоматизации. В этой главе будут обсуждаться различные инструменты, которые мы можем использовать для раскрытия структуры объектов модели службы, доступной во время любой операции автоматизации.
+
+=== InspectMe
+
+_Inspectme_-это комбинация экземпляра/метода, поставляемой из коробки, которую мы можем позвонить, чтобы сбросить некоторые атрибуты `$ evm.root` и связанные с ним объекты. В качестве примера мы можем вызвать Investme из кнопки на объекте _vm и exaction_, как мы делали при запуске нашего экземпляра _addcustomattribute_ в ссылке: ../ worky_with_virtual_machines/grail.asciidoc [работа с виртуальными машинами]. Поскольку как экземпляр, так и метод находятся в пространстве имен «Manageiq/System/запрос», мы можем вызовать Invesceme напрямую, а не называть `call_instance` в качестве посредника.
+
+Мы можем просмотреть выход Incesceme в _automation.log_:
+
+----
+# VMDB
+# grep insectme ​​log/Automation.log | awk 'fs = "info -:" {print $ 2}'
+Root: <$ evm.root> атрибуты - начало
+Атрибут - AE_Provider_category: инфраструктура
+Атрибут - miq_server: #<miqaemethodservice :: miqaeservicemiqserver: 0x000000 ...
+Атрибут - miq_server_id: 1000000000001
+Атрибут - Object_Name: запрос
+Атрибут - запрос: проверка
+Атрибут - пользователь: #<miqaemethodservice :: miqaeserviceuser: 0x0000000b86b540>
+Атрибут - user_id: 1000000000001
+Атрибут - VM: RHEL7SRV001
+Атрибут - VM_ID: 1000000000025
+Атрибут - vmdb_object_type: vm
+Root: <$ evm.root> атрибуты - конец
+...
+----
+
+Этот фрагмент журнала показывает раздел типичного вывода Inspectme, который сбрасывает атрибуты `$ evm.root.
+
+[TIP]
+Кевин Мори из Red Hat написал улучшенную версию Inspectme, доступную по адресу https://github.com/ramrexx/cloudforms_essentials. Его Incesceme обеспечивает очень четкий выход атрибутов, виртуальных столбцов, ассоциаций и тегов, которые доступны для объекта, на котором он был запущен. Например, при вызове из кнопки на виртуальной машине Inspectme ​​перечислит все свойства VM, включая аппаратное обеспечение, операционную систему, а также запрос на обеспечение и данные задачи.
+
+=== object_walker
+
+_Object_walker_ сноска: [object_walker доступен по адресу https://github.com/pemcg/object_walker, а также инструкции для использования] - немного более исследовательский инструмент, который ходит и сбрасывает объекты, атрибуты и виртуальные колонки `$ evm.root` и его подходные объекты. Он также рекурсивно пересекает ассоциации, чтобы ходить и сбрасывать любые объекты, которые он находит, так же, как веб -гусеница, изучая веб -сайт. Он печатает вывод в рубиноподобном синтаксисе, который можно скопировать и вставить непосредственно в сценарий автоматизации, чтобы получить доступ или идти по тем же пути.
+
+==== Black or Whitelisting Associations
+
+Одной из особенностей Object_Walker является возможность выборочно выбирать, какие ассоциации «ходить», чтобы ограничить вывод. Мы делаем это, установив `walk_association_policy` на` «белый список» или `« черный список »`, а затем определяя `walk_association_whitelist` или` walk_association_blacklist` json hash в схеме экземпляра, чтобы перечислить ассоциации, которые будут ходить (белый) или не ходить (черный список).
+
+На практике `walk_association_policy`` `" черный список "производит столько результатов, что его редко используется, и поэтому« белый список »чаще определяется, как так:
+
+[source,ruby]
+----
+{'Miqaeservicemanageiq_providers_redhat_inframanager_vm': ['harpware', 'host', 'storage'],
+'Miqaeservicemanageiq_providers_vmware_inframanager_vm': ['hardware', 'host', 'storage'],
+'Miqaeservicehardware': ['nics', 'guest_devices', 'ports', 'storage_adapters'],
+'Miqaeserviceguestdevice': ['arphieware', 'lan', 'network']}
+----
+
+==== object_walker_reader
+
+Существует сопутствующий скрипт, _Object_walker_reader_, который можно скопировать в прибор CloudForms или Manageiq, чтобы извлечь выходы Object_Walker из _Automation.log_. Читатель также может перечислить все выходы по временной метке, сбрасывать конкретный вывод по временной метке и даже _diff_ два выхода - полезно при запуске Object_walker до и после встроенного метода (например, в машине состояния), чтобы увидеть, что изменился метод.
+
+----
+Object Walker 1.8 начинается
+     --- walk_association_policy details ---
+walk_association_policy = белый список
+walk_association_whitelist = {'miqaeservicemiqprovisionrequest': ['miq_request', ...
+     --- $evm.current_* details ---
+$ evm.current_namespace = bit63/mufce (type: string)
+$ evm.current_class = objectwalker (тип: строка)
+$ evm.current_instance = object_walker (type: string)
+$ evm.current_method = object_walker (type: string)
+$ evm.current_message = create (type: string)
+$ evm.current_object =/bit63/stuff/objectwalker/object_walker (тип: drb :: drbobject ...
+$ evm.current_object.current_field_name = execute (type: string)
+$ evm.current_object.current_field_type = method (type: string)
+     --- automation instance hierarchy ---
+/Manageiq/System/Process/Automation ($ evm.root)
+|    /Manageiq/Infrastructure/VM/Lifecycle/Provisioning
+|    |    /Manageiq/Infrastructure/VM/Provisioning/Profile/evmgroup-super_administrator
+|    |    /Bit63/infrastructure/vm/provisioning/statemachines/vmprovision_vm/template ($ evm.parent)
+|    |    |    /Manageiq/Infrastructure/VM/Provisioning/StateMachines/Methods/CustomizeRequest
+|    |    |    /Manageiq/Infrastructure/VM/Provisioning/Placement/Default
+|    |    |    /Bit63/stuff/objectwalker/object_walker ($ evm.object)
+     --- walking $evm.root ---
+$ evm.root =/Manageiq/System/Process/Automation
+|    --- Атрибуты следуют ---
+|    $ evm.root ['ae_next_state'] = (type: string)
+|    $ evm.root ['ae_provider_category'] = инфраструктура (тип: строка)
+|    $ evm.root ['ae_result'] = ok (type: string)
+|    $ evm.root ['ae_state'] = walkobjects (type: string)
+|    $ evm.root ['ae_state_retries'] = 0 (type: fixnum)
+|    $ evm.root ['ae_state_started'] = 2016-08-01 09:55:59 UTC (тип: строка)
+|    $ evm.root ['ae_state_step'] = main (type: string)
+|    $ evm.root ['ae_status_state'] = on_exit (type: string)
+|    $ evm.root ['miq_group'] => #<miqaemethodservice :: miqaeservicemiqgroup: 0x00 ...
+|    |    --- Атрибуты следуют ---
+|    |    $ evm.root ['miq_group']. Create_on = 2016-05-25 08:09:35 UTC
+|    |    $ evm.root ['miq_group']. description = evmgroup-super_administrator (type: string)
+|    |    $ evm.root ['miq_group']. Filters = nil
+|    |    $ evm.root ['miq_group']. Group_type = System (type: String)
+|    |    $ evm.root ['miq_group']. id = 2 (type: fixnum)
+|    |    $ evm.root ['miq_group']. sequence = 1 (type: fixnum)
+|    |    $ evm.root ['miq_group']. Настройки = nil
+|    |    $ evm.root ['miq_group']. tenant_id = 1 (type: fixnum)
+|    |    $ evm.root ['miq_group'].
+|    |    --- Конец атрибутов ---
+|    |    --- Виртуальные столбцы следуют ---
+|    |    $ evm.root ['miq_group']. allocated_memory = 1073741824 (тип: fixnum)
+|    |    $ evm.root ['miq_group']. allocated_storage = 42949672960 (тип: fixnum)
+|    |    $ evm.root ['miq_group']. allocated_vcpu = 1 (тип: fixnum)
+----
+
+Здесь мы видим частичный вывод от _object_walker_reader_, показывающий обход ассоциаций между объектами и списком атрибутов, виртуальных столбцов, ассоциаций и методов для каждого столкновения с каждой встречей.
+
+=== Rails console
+
+Мы можем подключиться к консоли Rails, чтобы осмотреть вокруг.
+
+[CAUTION]
+====
+Когда мы работаем с командной строкой Rails, мы имеем полный доступ к чтению/записи к объектам и таблицам, которые мы находим там. Мы должны чисто использовать эту технику для расследования только для чтения и на наш собственный риск. Создание любых дополнений или изменений может сделать наш аппарат нестабильным.
+====
+
+На самого устройства CloudForms или Manageiq:
+
+....
+# vmdb # псевдоним vmdb = 'cd/var/www/miq/vmdb/' определяется на устройстве
+# Source/etc/default/evm
+# Bin/Rails c
+Погрузочная производственная среда (Rails 3.2.17)
+IRB (Main): 001: 0>
+....
+
+Оказавшись в консоли Rails, мы можем сделать много вещей, например, используйте синтаксис объекта Rails, чтобы посмотреть на все _host_ Active Records:
+
+....
+IRB (Main): 002: 0> host.all
+(3,6 мс) Выберите версию ()
+Загрузка хоста (0,7 мс) Выберите «Хост».* Из «Хост»
+Host Inst (85,2 мс - 2 -й)
+=> [#<HoStredHat Id: 1000000000002, имя: "RHELH02.bit63.net", \
+Имя хоста: "192.168.12.22", iPaddress: "192.168.12.22", ...
+
+IRB (Main): 003: 0>
+....
+
+Мы можем даже генерировать нашу собственную переменную `$ evm`, которая соответствует по умолчанию двигателя автоматизации:
+
+[source,ruby]
+----
+$ evm = miqaemethodservice :: miqaeservice.new (miqaeengine :: miqaeworkspaceruntime.new)
+----
+
+С помощью нашей переменной `$ evm` мы можем эмулировать действия, которые мы выполняем из сценария автоматизации:
+
+....
+IRB (Main): 002: 0> $ evm.log (: info "Test с консоли Rails")
+=> Верно
+....
+
+Как и в случае с «реальным» методом автоматизации, это записывает наше сообщение в _automation.log_:
+
+....
+...8:45:11.223058 #2109:eb9998]  INFO -- : <AEMethod > test from the Rails console
+....
+
+
+=== Rails db
+
+Иногда полезно иметь возможность изучать некоторые таблицы базы данных (например, для поиска заголовков столбцов, которые мы можем найти_BY_* ON). Мы можем подключиться к Rails DB, что ставит нас непосредственно в сеанс PSQL:
+
+----
+[root@miq03 ~]# vmdb
+[root@miq03 vmdb]# source/etc/default/evm
+[root@miq03 vmdb]# bin/rails db
+PSQL (9.4.5)
+Тип "помощь" для помощи.
+
+vmdb_production =#
+----
+
+Оказавшись в сеансе DB Rails, мы можем свободно изучить базу данных VMDB. Например, мы могли бы посмотреть на столбцы в таблице `geagy_devices`:
+
+----
+vmdb_production =# \ d guest_devices
+Таблица "public.guest_devices"
+Колонка |          Тип |               Модификаторы
+-------------------+------------------------+------------------------------------
+id | bigint | Не null Default NextVal ('Гость _...
+device_name | Персонал варьируется (255) |
+device_type | Персонал варьируется (255) |
+Расположение | Персонал варьируется (255) |
+имя файла | Персонал варьируется (255) |
+Hardware_id | bigint |
+режим | Персонал варьируется (255) |
+CONTROLLER_TYPE | Персонал варьируется (255) |
+размер | bigint |
+free_space | bigint |
+size_on_disk | bigint |
+адрес | Персонал варьируется (255) |
+switch_id | bigint |
+lan_id | bigint |
+...
+----
+
+Мы могли бы перечислить все шаблоны на нашем приборе (шаблоны находятся в столбце VMS ', но имели логический атрибут `шаблона', который верно):
+
+----
+vmdb_production =# select id, имя из виртуальной машины, где Template = 't';
+id |                  имя
+---------------+----------------------------------------
+1000000000014 | Redhat_cfme-5.5.0.13
+1000000000015 | Rhel7-Generic
+1000000000016 | Rhel-Guest-Image-7.0-20140930.0.x86_64
+1000000000017 | RHEL 7
+1000000000029 | Manageiq_capablanca
+1000000000053 | Федора 23
+(6 рядов)
+----
+
+=== Summary
+
+В этой главе мы узнали четыре очень полезных способа исследования объектной модели. Мы можем использовать `insectme` или` object_walker` для печати структуры на _automation.log_, или мы можем интерактивно использовать командную строку Rails.
+
+Мы широко используем эти инструменты и методы при разработке наших сценариев, как для выяснения доступных объектов, которые мы могли бы использовать, так и для отладки наших сценариев, когда дела идут не так, как ожидалось.
+
+==== Further Reading
+
+http://cloudformsblog.redhat.com/tag/xml-format/tinspectxml-объекты дампа как xml]
