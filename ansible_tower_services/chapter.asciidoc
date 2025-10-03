@@ -1,0 +1,247 @@
+[[ansible-tower-services]]
+== Ansible Tower Services
+
+Один из доступных типов элементов каталога, когда мы создаем новый элемент обслуживания, - * ansibletower * (см. << i1 >>)
+
+[[i1]]
+. Ansable Tower Kataloge Type Item
+image::images/ss1.png[Screenshot,500,align="center"]
+{zwsp} +
+
+В этой главе мы исследуем компоненты автоматизации данных, которые позволяют нам создавать Ansible Tower Services и сервисные комплексы, которые включают Ansible Tower Works.
+
+=== The Ansible Tower Service Provisioning State Machine
+
+_/ConfigurationManagement/AnsibleTower/Service/Provisioning_ Пространство имен в хранилище данных содержит государственные машины, обеспечивающие услуги, методы и связанные с ними классы электронной почты, которые необходимы для предоставления услуг в Ansible Tower (см. << i2 >>).
+
+[[i2]]
+.ConfigurationManagement/AnsibleTower Пространство имен
+image::images/ss2.png[Screenshot,320,align="center"]
+{zwsp} +
+
+Два экземпляра машины состояния _provision_-_default_ и __provision_from_bundle__. Мы используем _default_, когда мы создаем единую автономную службу и __provision_from_bundle__, когда мы выполняем задание Ansible Tower в рамках пакета услуг, включающих как обеспечение виртуальной машины, так и операции на конфигурации.
+
+==== The _default_ State Machine Instance
+
+Экземпляр машины _default_ состояния вызван для обработки отдельных элементов каталога обслуживания. Поля этой машины состояния показаны в << i3 >>.
+
+[[i3]]
+.Fields of State Machine по умолчанию
+image::images/ss3.png[Screenshot,800,align="center"]
+{zwsp} +
+
+===== pre1
+
+Состояние * pre1 * вызывает метод _preprovision_, который проверяет, являются ли входные данные действительными, и печатает некоторые из входных значений на _automation.log_. Он содержит полезный метод с именем __modify_job_options__, который по умолчанию не называется (вызов комментируется), но позволит нам настроить любой из вариантов задания, если мы хотели бы клонировать и редактировать метод.
+
+[source,ruby]
+----
+def modify_job_options (служба)
+# Пример, как программно изменить варианты работы:
+job_options = service.job_options
+job_options [: limit] = 'somehost'
+job_options [: extra_vars] ['flavor'] = 'm1.small'
+
+# ВАЖНО: Установите Stack_options
+service.job_options = job_options
+конец
+----
+
+===== provision
+
+Состояние * Provision * вызывает метод _provision_, который выполняет некоторую предварительную проверку, прежде чем вызовать метод объекта службы `launch_job`.
+
+===== checkprovisioned
+
+* CheckProvisioned * Состояние вызывает метод __check_provisioned__, который вызывает метод объекта службы `job` для извлечения объекта Manageiq_providers_ansibletower_configurationManager_job, а затем вызывает метод задания` normalized_live_status`, чтобы извлечь текущий статус задания.
+
+===== post1
+
+Состояние * post1 * вызывает метод __post_provisioned__, который позволяет нам выполнять любую необязательную пост-обработку, которую мы могли бы считать необходимыми. Он содержит полезный метод с именем __dump_job_outputs__, который по умолчанию не вызывается (вызов прокомментируется), но позволит нам написать выход работы на _automation.log_, если это необходимо.
+
+[source,ruby]
+----
+def dilmb_job_outputs (job)
+log_type = job.status == 'не удалось'? 'error': 'info'
+@handle.log (log_type, "ansible Tower Job #{job.name} Стандартный выход: #{job.raw_stdout}")
+конец
+----
+
+===== EmailOwner
+
+Состояние * Emailwoter * вызывает экземпляр электронной почты __serviceProvision_complete__, чтобы уведомить о том, что служба завершена.
+
+===== Finished
+
+* Завершенное * Состояние вызывает __/system/commonmethods/statemachinemethods/service_provision_fineed__ экземпляр, чтобы завершить обработку машины состояния услуг.
+
+==== The __provision_from_bundle__ State Machine Instance
+
+Экземпляр состояния __provision_from_bundle__ вызывается, когда элемент каталога услуг Ansible должен вызывать из пакета обслуживания после элемента каталога услуг VM. Поля этой машины состояния показаны в << i4 >>.
+
+[[i4]]
+.Fields of Provision_From_Bundle State Machine
+image::images/ss4.png[Screenshot,800,align="center"]
+{zwsp} +
+
+Как видно, разница между этой машиной состояния и _default_ заключается в том, что _preprovision_ перешла в состояние * pre2 *, и в состояниях * Sequencer * и * Pre1 * * Pre1 *, чтобы вызвать _groupeNeCenceCeck_ и _catalogiteminitialization_.
+
+===== Sequencer
+
+Состояние * Sequencer * вызывает тот же самый экземпляр _group sechenceCececece_ и метод, который работают государственные машины виртуальной машины. Метод _group sechenceCeck_ проверяет право на участие в выполнении текущей задачи по обеспечению шаблона услуг, в соответствии с порядком положения, определенным при добавлении ресурсов в пакет обслуживания. _Group SecheRenceCheck_ позволяет государственной машине продолжаться, если все другие задачи с более низким приоритетом предоставления имеют атрибут «штат» «закончен». Если какая -либо из задач с более низким приоритетом является неполным, _group secherenceCheck_ выходит с повторной попытки штата и интервалом повторной попытки в одну минуту.
+
+Общий призыв к _group shostenceCeck_, выполненный как VM Provisioning, так и Ansiblethower Wabs State Machines, позволяет нам переключать элементы обслуживания VM с предметами службы Ansible Configuration. Мы можем быть уверены, что конфигурация Ansible не будет продолжаться до тех пор, пока виртуальная машина не будет полностью предоставлена.
+
+===== pre1
+
+Состояние * pre1 * вызывает вызовы одинаковые _catalogiteminitialization_ экземпляр и метод, с которым работают штатные машины VM. Это должно убедиться, что любые значения диалога услуг, передаваемые в пакет услуг, доступны для задачи обеспечения шаблона услуг Ansible.
+
+=== Service Models
+
+Модель обслуживания, связанную с Ansible, которая представляет нас интересен объект MiqaeservicesersEnceanceantower.
+
+==== MiqAeServiceServiceAnsibleTower
+
+Объект miqaeserviceserviceansiblethower представляет собой услугу Ansible Tower. Распечатка Object_Walker типичного объекта выглядит следующим образом:
+
+
+```
+ --- attributes follow ---
+Service.ancestry = Nil
+service.created_at = 2016-12-01 11:11:00 UTC
+service.description = установить простой стек лампы
+service.display = true
+service.evm_owner_id = 1
+Service.Guid = D709AE06-B7B6-11E6-B465-001A4AA0151A
+Service.id = 5
+service.miq_group_id = 2
+service.name = простой стек лампы
+service.options [: dialog] = {"dialog_limit" => "lampsrv001", "dialog_param_ntpserver" => "192.168.xx.xx", "dialog_param_mysql_port" => "3306", "dialog_param_dbname" "DILAOG_PARAM_DBUSER" => "FOUSER", "DILAOG_PARAM_DBPASS" => "Секрет", "DILAOG_PARAM_HTTPD_PORT" => "80", "DILAOG_PARAM_REPOSITIOR
+Service.retired = nil
+service.retirement_last_warn = nil
+service.retirement_requester = nil
+service.retirement_state = nil
+service.retirement_warn = nil
+service.retires_on = nil
+service.service_template_id = 2
+service.tenant_id = 1
+Service.Type = ServiceanceAbleTower
+service.updated_at = 2016-12-01 11:11:00 UTC
+ --- end of attributes ---
+ --- virtual columns follow ---
+service.aggregate_all_vm_cpus = 0
+service.aggregate_all_vm_disk_count = 0
+service.aggregate_all_vm_disk_space_allocated = 0
+service.aggregate_all_vm_disk_space_used = 0
+service.aggregate_all_vm_memory = 0
+service.aggregate_all_vm_memory_on_disk = 0
+service.aggregate_direct_vm_cpus = 0
+service.aggregate_direct_vm_disk_count = 0
+service.aggregate_direct_vm_disk_space_allocated = 0
+service.aggregate_direct_vm_disk_space_used = 0
+service.aggregate_direct_vm_memory = 0
+service.aggregate_direct_vm_memory_on_disk = 0
+service.custom_1 = nil
+service.custom_2 = nil
+service.custom_3 = nil
+service.custom_4 = nil
+service.custom_5 = nil
+service.custom_6 = nil
+service.custom_7 = nil
+service.custom_8 = nil
+service.custom_9 = nil
+service.evm_owner_email = nil
+service.evm_owner_name = администратор
+service.evm_owner_userid = admin
+service.has_parent = false
+Service.owned_by_current_ldap_group = nil
+Service.owned_by_current_user = nil
+service.owning_ldap_group = evmgroup-super_administrator
+service.power_state = nil
+service.power_status = nil
+service.region_description = область 0
+service.region_number = 0
+service.service_id = nil
+service.v_total_vms = 0
+ --- end of virtual columns ---
+ --- associations follow ---
+service.all_service_children
+service.direct_service_children
+service.direct_vms
+Service.Indirect_service_children
+Service.Indirect_VMS
+service.parent_service
+service.root_service
+service.service_resources
+service.service_template
+Service.tenant
+Service.vms
+ --- end of associations ---
+ --- methods follow ---
+Service.automate_retirement_EntryPoint
+service.configuration_manager
+service.custom_get
+service.custom_keys
+service.custom_set
+Service.description =
+service.dialog_options
+Service.display =
+service.error_retiring?
+service.extend_retires_on
+service.finish_retirement
+service.get_dialog_option
+Service.Group =
+Service.inspect
+service.inspept_all
+Service.job
+service.job_options
+service.job_options =
+service.job_template
+service.job_template =
+service.launch_job
+service.model_suffix
+service.name =
+Service.owner =
+service.parent_service =
+Service.ReLoad
+service.remove_from_vmdb
+service.retire_now
+service.retire_service_resources
+Service.retied?
+service.retirement_state =
+service.retirement_warn =
+service.retires_on =
+Service.reiming?
+service.set_dialog_option
+service.shutdown_guest
+Service.start
+service.start_retirement
+Service.stop
+Service.suspend
+service.tag_assign
+service.tag_unassign
+service.tagged_with?
+Service.tags
+ --- end of methods ---
+```
+ 
+Объект является расширением стандартного типа объекта miqaeserviceservice, но добавляет несколько полезных методов, специфичных для определения, следующим образом:
+
+```
+service.configuration_manager
+Service.job
+service.job_options
+service.job_options =
+service.job_template
+service.job_template =
+service.launch_job
+```
+
+Это метод `launch_job`, который называется во время государственной машины *, состоящее *, чтобы инициировать работу работы Ansible Tower.
+
+=== Summary
+
+Глава завершила наше исследование компонентов, связанных с башней, в автоматическом хранилище данных, которое мы начали в ссылке: ../ Tower_Relited_automate_components/gupt.asciidoc [Компоненты автоматизации, связанные с башней]. Государственные машины, экземпляры и методы, которые мы здесь изучали, используются, когда мы создаем службы для развертывания сценариев Ansible Configuration.
+
+В следующей главе мы проведем два примера создания Ansible Tower Services; один для одного предназначения каталога, а другой - как часть пакета каталога.
+ 

@@ -1,0 +1,188 @@
+[[argument-passing-and-handling]]
+== Аргумент прохождение и обработка
+
+В предыдущих главах мы обнаружили несколько способов вызывания автоматизации. В некоторых случаях мы должны передать аргументы в метод экземпляра, но способ передавать аргументы в методы и принять их изнутри метода, варьируется в зависимости от того, как вызывается экземпляр. Нам нужно рассмотреть это, если мы пишем код, который можно вызвать несколькими способами, например, из кнопки и/или из вызова API.
+
+В этой главе мы рассмотрим, как мы передаем аргументы в экземпляры, и как мы их извлекаем из метода. Мы будем называть один и тот же экземпляр (__object_walker__) четыре способа, передавая два аргумента каждый раз, «обед» и «ужин». Мы можем использовать Object_Walker_reader, чтобы показать нам, где аргументы могут быть прочитаны изнутри нашего называемого метода.
+
+[NOTE]
+====
+При использовании версии 1.8 или более поздней части Object_Walker нам нужно установить `$ print_evm_object = true
+====
+
+=== Case 1 - Calling from a Button
+
+Для этого первого случая мы называем __object_walker__ (через _/system/process/requent/call_instance_) из кнопки. Мы создаем кнопку диалоговое окно, которое подсказывает для двух полей текстовых поле (см. << i1 >>).
+
+[[i1]]
+. Specple Dialog для запроса значений ввода
+image::images/ss1.png[Screenshot,350,align="center"]
+{zwsp} +
+
+Затем мы добавляем кнопку в группу кнопок в любом месте.
+
+Если мы нажмеем кнопку и введем значения «салат» и «макароны» в диалоговые окны, мы видим, как значения диалога появляются в `$ evm.root` в методе получения, индексированные с помощью имени ключа
+
+....
+~/object_walker_reader.rb | grep -p "Обед | ужин"
+|    $ evm.root ['dialog_dinner'] = салат (тип: строка)
+|    $ evm.root ['dialog_lunch'] = pasta (type: string)
+....
+
+=== Case 2 - Calling from the RESTful API
+
+Для этого варианта использования у нас есть внешний сценарий Ruby, который вызывает наше внутреннее экземпляр Manageiq через API REST:
+
+[source,ruby]
+----
+url = "https: //#{server}"
+
+post_params = {
+: version => '1.1',
+: uri_parts => {
+: namespace => 'discovery',
+: class => 'ObjectWalker',
+: encess => 'object_walker'
+  },
+: параметры => {
+: обед => "бутерброд",
+: ужин => "стейк"
+  },
+: requester => {
+: auto_approve => true
+  }
+} .to_json
+Query = "/api/Automation_Requests"
+
+rest_return = restclient :: request.execute (метод :: post, url: url + Query,
+: user => имя пользователя,
+: пароль => пароль,
+                                          :headers => {:accept => :json},
+: payload => post_params,
+verify_ssl: false)
+result = json.parse (rest_return)
+----
+
+В призванном методе мы видим аргументы, видимые в нескольких местах; В параметрах задачи хэш как ключ «attrs»; в соответствии с `$ evm.root ', потому что это тот экземпляр, который мы запустили при вводе Automate, и под` $ evm.object`, потому что это также наш текущий объект.
+
+....
+~/object_walker_reader.rb | grep -p "Обед | ужин"
+|    Object_walker: $ evm.root ['Automation_task']. Options [: attrs] = {: unch => "sandwich" ,: unning => "steak" ,: userid => "admin"} (тип: хэш)
+Object_walker: $ evm.root ['unned'] = steak (тип: строка)
+Object_walker: $ evm.root ['unchning'] = sandwich (type: string)
+Object_walker: $ evm.object ['unned'] = steak (type: string)
+Object_walker: $ evm.object ['unchning'] = sandwich (type: string)
+....
+
+=== Case 3 - Calling from a Relationship or Automate Datastore URI
+
+Когда мы называем экземпляры через отношения (например, из стационарной машины), мы указываем полный URI экземпляра. Мы можем добавить аргументы к этому URI, используя стандартный синтаксис запросов веб -формы.
+
+Для этого варианта использования мы вызовым __object_walker__ из уже запущенного сценария автоматизации с использованием `$ evm.Instantiate`. Аргумент «$ evm.Instantiate» - это полный URI экземпляра, который будет запущен, следующим образом:
+
+[source,ruby]
+----
+$ evm.instantiate ("/discovery/objectwalker/object_walker? Обед = салат и ужин = спагетти")
+----
+
+При создании таким образом метод получения получает аргументы из `$ evm.object` (один из наших (великих) родительских экземпляров -« $ evm.root », наш непосредственный абонент -` $ evm.parent`).
+
+....
+~/object_walker_reader.rb | grep -p "Обед | ужин"
+Object_walker: $ evm.object ['unned'] = спагетти (тип: строка)
+Object_walker: $ evm.object ['unchning'] = салат (тип: строка)
+....
+
+=== Case 4 - Passing Arguments via the ws_values Hash During a VM Provision
+
+Мы можем передать наши собственные значения в процесс обеспечения виртуальной машины, чтобы их можно было интерпретировать любым методом в виртуальной машине _provision с машины состояния Template_.
+
+Учреждение для этого предоставляется полем*extra_values*в*/API/provision_Requests*Rest -Call (** extravalues ​​** в исходном мыле `evmprovisionrequestex` или из шестой элемента в списке аргументов в` $ evm.execute ('create_provision_request', ...) Ссылка: ../ Создание_Provisioning_Requests_programmaly/gate.asciidoc [Создание запросов на программирование программно]).
+
+Для этого варианта использования мы отредактировали _provision vm с машины State_ Template_, чтобы добавить несколько дополнительных этапов (см. << i3 >>).
+
+[[i3]]
+. Нажатие Object_Walker из машины VMProvision_vm State
+image::images/ss3.png[Screenshot,700,align="center"]
+{zwsp} +
+
+Эти этапы могут изменить процесс обеспечения, если это необходимо, на основе пользовательских значений, передаваемых. Примером этого может быть указание размер диска для дополнительного диска, который будет добавлен на этапе AddDisk.
+
+Для этого примера мы используем простой метод автоматизации для вызова `$ evm.execute ('create_provision_request', ...)` для предоставления новой виртуальной машины. Мы указываем пользовательские значения в ** arg6 **:
+
+[source,ruby]
+----
+# arg1 = версия
+args = ['1.1']
+
+# arg2 = шаблонфилды
+args << {'name' => 'rhel7-generic',
+'request_type' => 'шаблон'}
+
+# arg3 = vmfields
+args << {'vm_name' => 'test10',
+'vlan' => 'rhevm'}
+
+# arg4 = запрашивающий
+args << {'antuctor_email' => 'pemcg@bit63.com',
+'владелец_first_name' => 'peter',
+'antuction_last_name' => 'mcgowan'}
+
+# arg5 = теги
+Args << nil
+
+# arg6 = значения веб -службы (ws_values)
+args << {'lunch' => 'Soup',
+'ужин' => 'курица'}
+
+# arg7 = emscustomattributes
+Args << nil
+
+# arg8 = miqcustomattributes
+Args << nil
+
+request_id = $ evm.execute ('create_provision_request', *args)
+----
+
+Когда мы называем этот метод, и начинается процесс обеспечения виртуальной машины, мы можем извлечь пользовательские значения на любом этапе с `miq_provision_request` или` miq_provision` hash hash с использованием ключа `ws_values` ...
+
+....
+~/object_walker_reader.rb | grep -p "Обед | ужин"
+|    $ evm.root ['miq_provision']. Options [: ws_values] = \
+{: lunch => "soup" ,: unning => "курица"} (тип: хэш)
+|    |    miq_provision_request.options [: ws_values] = \
+{: lunch => "soup" ,: unning => "курица"} (тип: хэш)
+....
+
+=== Passing Arguments When Calling a Method in the Same Class
+
+Когда экземпляр (такой как машина состояния) вызывает метод в том же классе, что и он сам, он может передавать пары аргумента ключа/значения в скобках в качестве входных параметров с вызовом. Мы видим машину состояния _vmprovision_vm_, когда он вызывает _Update_provision_status_ во время обработки *на входе *, *на выходе *и *на ошибке *(см. << i4 >>).
+
+[[i4]]
+.Text Arguments передается в Update_provision_status
+image::images/ss4.png[Screenshot,400,align="center"]
+{zwsp} +
+
+Когда мы создаем метод, который принимает входные параметры таким образом, нам необходимо указать имя и тип данных каждого параметра в определении метода (см. << i5 >>).
+
+[[i5]]
+. Определение входных параметров
+image::images/ss5.png[Screenshot,700,align="center"]
+{zwsp} +
+
+Затем метод считывает параметры от `$ evm.inputs`:
+
+[source,ruby]
+----
+update_provision_status (status => 'pre1', status_state => 'on_entry')
+
+# Получить статус из статуса поля ввода
+статус = $ evm.inputs ['status']
+
+# Get status_state ['on_entry', 'on_exit', 'on_error'] из поля ввода
+status_state = $ evm.inputs ['status_state']
+----
+
+=== Summary
+
+В этой главе показано, как мы можем отправлять аргументы, когда мы вызываем экземпляры, и как мы обрабатываем их внутри метода. То, как метод получает аргумент, зависит от того, как был вызван экземпляр, но мы можем использовать `$ evm.root ['vmdb_object_type']` как ранее, чтобы определить это, и получить доступ к аргументу соответствующим образом.

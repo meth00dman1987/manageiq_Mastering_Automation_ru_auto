@@ -1,0 +1,187 @@
+[[calling-external-services]]
+== Вызов внешних служб
+
+Мы видели в ссылке: ../ Calling_automation_using_the_restful_api/gupt.asciidoc [Вызовая автоматизация с использованием RESTFUL API] Как внешние системы могут создавать вызовы _incoming_ в CloudForms или Manageiq с использованием API RESTFUFUFUFUFUFUFUFUL, и запустить автоматизации экземпляров, возможно, инициировать рабочие процессы, которые мы определили.
+
+Из автоматизации мы также можем сделать вызовы _outogogust_ во внешние системы. Обычно мы используем API мыла или RESTFUL для доступа к тезисам внешних служб, и есть несколько рубиновых драгоценных камней, которые облегчают нам это, в том числе Savon (клиент SOAP), RestClient, Xmlsimple и Nokogiri (XML Parsers) и Fog (библиотека Ruby Cloud Services).
+
+Мы уже видели пример создания подключения API RESTFUFUFUT с менеджером RHEV в ссылке: ../../ Customising_VM_Provisioning/gupt.asciidoc [Настройка проведите виртуальных машин]. Теперь мы рассмотрим еще несколько способов интеграции с External Services.footNote: [Есть больше и полные примеры кода интеграции на https://github.com/ramrexx=]]]
+
+=== Calling a SOAP API Using the Savon Gem
+
+В следующем фрагменте показан пример того, как мыло вызов в балансировщик нагрузки F5 Big-IP, чтобы добавить IP-адрес в пул (некоторые строки были опущены для краткости/ясности):
+
+[source,ruby]
+----
+def call_f5_pool (soap_action, body_hash = nil)
+ServerName = nil || $ evm.object ['servername']
+Имя пользователя = nil || $ evm.object ['username']
+пароль = nil || $ evm.object.decrypt ('пароль')
+
+требуется "rubygems"
+Gem 'Savon', '= 2.3.3'
+требуется "Савон"
+требуется 'httpi'
+
+# Настроить httpi Gem для уменьшения журнала словесных систем
+Httpi.log_level =: info # изменение уровня журнала
+Httpi.log = false # httpi httpi
+Httpi.adapter =: net_http # [: httpclient ,: curb ,: net_http]
+
+SOAP = SAVON.Client DO | S |
+s.wsdl "https: //#{servername} /control/icontrolportal.cgi? \
+Wsdl = locallb.pool "
+s.basic_auth [имя пользователя, пароль]
+s.ssl_verify_mode: нет
+s.endpoint "https: //#{servername}/icontrol/icontrolportal.cgi"
+s.namespace 'urn: icontrol: locallb/pool'
+s.env_namespace: soapenv
+S.Namespace_Identifier: Pool
+s.raise_errors false
+s.convert_request_keys_to: нет
+s.log_level: ошибка
+S.log false
+конец
+
+response = soap.call soap_action do | s |
+s.message body_hash, если только body_hash.nil?
+конец
+
+# Преобразовать ответ XML в хэш
+return response.to_hash ["#{soap_action} _response" .to_sym] [: return]
+конец
+  ...
+vm.ipaddresses.ed do | vm_ipaddress |
+body_hash = {}
+body_hash [: pool_names] = {: item => [f5_pool]}
+body_hash [: members] = [{: items =>
+{: member =>
+{: address => vm_ipaddress,
+: port => f5_port}
+                             } 
+                           }]
+# Позвоните F5 и верните хеш имен бассейнов
+f5_return = call_f5_pool (: add_member, body_hash)
+конец
+----
+
+Этот скрипт определяет метод + call_f5_pool +, который обрабатывает соединение с балансировщиком нагрузки. Метод сначала извлекает подключаемые учетные данные из схемы экземпляра, а затем определяет определенную версию GEM _Savon_ и устанавливает необходимые уровни регистрации HTTP. Он инициализирует клиента SAVON с необходимыми параметрами (включая путь WSDL), а затем делает вызов мыла. Метод, наконец, возвращается с возвращаемой строкой SOAP XML, отформатированной как рубиновый хэш.
+
+Метод вызывается в цикле, передавая IP -адрес в аргумент + body_hash + на каждой итерации.
+
+=== Calling an OpenStack API Using the Fog Gem
+
+GEM _FOG_ - это многоцелевая библиотека облачных сервисов, которая поддерживает подключение к ряду облачных поставщиков.
+
+В следующем коде используется драгоценный камень https://github.com/fog/fog-openstack= openstack] для извлечения сети OpenStack из Neutron и представить их в виде динамического раскрывающегося диалогового списка. Кодовые фильтры фильтровали сети, которые соответствуют имени арендатора, и предполагает, что у группы пользователя CloudForms/Manageiq есть тег + арендатор +, содержащий то же имя:
+
+[source,ruby]
+----
+требуется 'туман/openstack'
+начинать
+endant = $ evm.root ['user']. current_group.tags (: арендатор). First
+$ evm.log (: информация, "Имя арендатора: #{арендатор}")
+  
+dialog_field = $ evm.object
+dialog_field ["sort_by"] = "value"
+dialog_field ["data_type"] = "string"
+openstack_networks = {}
+openstack_networks [nil] = '<select>'
+ems = $ evm.vmdb ('ems'). find_by_name ("openstack dc01")
+Поднимите «EMS, не найденные», если Ems.nil?
+  
+Neutron_service = Fog :: network :: openstack.new ({
+: openstack_api_key => ems.authentication_password,
+: openstack_username => ems.authentication_userid,
+    :openstack_auth_url => "https://#{ems.hostname}:#{ems.port}/v2.0/tokens",
+: openstack_tenant => арендатор,
+    :connection_options => {:ssl_verify_peer => false}
+  })
+
+keystone_service = Fog :: Identity :: openstack.new ({
+: openstack_api_key => ems.authentication_password,
+: openstack_username => ems.authentication_userid,
+    :openstack_auth_url => "https://#{ems.hostname}:#{ems.port}/v2.0/tokens",
+: openstack_tenant => арендатор,
+    :connection_options => {:ssl_verify_peer => false}
+  })
+  
+tenant_id = keystone_service.current_tenant ["id"]
+$ evm.log (: info "
+Networks = Neutron_service.networks.all
+Networks.emo Do | Network |
+$ evm.log (: info "Найдует сеть #{network.inspect}")
+if network.tenant_id == tenant_id
+network_id = $ evm.vmdb ('cloudnetwork'). find_by_ems_ref (network.id)
+openstack_networks [network_id] = network.name
+конец
+конец
+  
+dialog_field ["values"] = openstack_networks
+Выход miq_ok
+  
+rescue => err
+$ evm.log (: error, "[#{err}] \ n#{err.backtrace.join (" \ n ")}")
+Выход miq_stop
+конец
+----
+
+Этот пример сначала извлекает значение тега A + Andant +, применяемое к текущей группе контроля доступа текущего пользователя. Затем он создает туманное соединение как с нейтроном, так и с Keystone, используя + Fog :: Network.new + и + Fog :: Identity.new + вызовы, указание A +: Provider + Type 'OpenStack', учетные данные, определенные для поставщика Managiq OpenStack, и имя арендатора, извлеченные из метки.
+
+Скрипт итерат, хотя и все нейтронные сети, соответствующие тем, с A + Tenant_id +, который соответствует нашему тегу + арендатор +. Если соответствующая сеть найдена, она получает идентификатор объекта сервиса CloudNetwork 'для сети и использует это в качестве ключа для хэша, который заполняет динамический раскрывающийся список. Соответствующее значение хэша - это имя сети, извлеченное из нейтрона.
+
+=== Reading from a MySQL Database Using the MySQL Gem
+
+Мы можем добавить драгоценные камни к нашему устройству Manageiq, если пожелаем. Следующий фрагмент кода использует Gem _mysql_ для подключения к CMDB на основе MySQL для извлечения кодов проекта и создания из них тегов:
+
+[source,ruby]
+----
+Требовать 'Rubygems'
+требуется 'mysql'
+
+начинать
+сервер = $ evm.object ['server']
+Имя пользователя = $ evm.object ['username']
+пароль = $ evm.object.decrypt ('пароль')
+База данных = $ evm.Object ['база данных']
+  
+con = mysql.new (сервер, имя пользователя, пароль, база данных)
+
+Если $ evm.execute ('Category_exists?', "Project_code")
+$ evm.execute ('category_create',: name => "project_code",
+: single_value => true,
+: description => "Код проекта")
+конец
+con.query ('Установить имена UTF8')
+Query_Results = con.Query ('Выберите Описание, Код из ProjectCodes')
+Query_Results.emo Do | Record |
+TAG_NAME = record [1]
+tag_display_name = record [0] .force_encoding (Encoding :: UTF_8)
+
+Если $ evm.execute ('tag_exists?', 'project_code', tag_name)
+$ evm.execute ('tag_create', "project_code" ,: name => tag_name,
+: description => tag_display_name)
+конец
+конец
+конец
+спасен mysql :: error => e
+ставит E.errno
+ставит E.Error
+гарантировать
+con.close Если Con
+конец
+----
+
+Этот пример сначала подключается к базе данных MySQL, используя хранилища учетных данных в схеме экземпляра. Затем он проверяет, что категория тегов существует, прежде чем указать «Установить имена UTF8'» сноску: [это требуется, если база данных содержит «неанглийские» струны с маками символов, такими как Umlauts], и внесение запроса SQL в базу данных для получения списка кодов проектов и описаний. Наконец, скрипт итерации через список возвращаемых кодов проектов, создавая тег для каждого соответствующего кода.
+
+=== Summary
+
+Эти примеры показывают гибкость, которую мы должны интегрировать с другими компонентами предприятия. Мы назвали API балансировщика нагрузки как часть операции по обеспечению подготовки, чтобы добавить новые IP -адреса в свой пул. Это позволяет нам полностью автоматизировать автоматическую масштаб нашей рабочей нагрузки приложений. Мы вызвали два компонента OpenStack для заполнения динамического раскрывающегося списка в диалоговом окне службы, и мы сделали вызов SQL в базу данных MySQL, чтобы извлечь список кодов проекта и создать из них теги.
+
+==== Further Reading
+
+https://github.com/savonrb/savon® Metal Metal Soap Client]
+
+https://github.com/fog/fog= Библиотека Ruby Cloud Services]
+
+https://rubygems.org/gems/mysql/tsmysql API модуль для Ruby]
