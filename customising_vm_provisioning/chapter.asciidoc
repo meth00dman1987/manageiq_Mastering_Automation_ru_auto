@@ -1,0 +1,354 @@
+[[customising-vm-provisioning]]
+== Настройка обеспечения виртуальной машины
+
+В ссылке: ../ VM_Provision_state_machine/gupt.asciidoc [машина состояния VM Provision] Мы увидели, как была разработана машина государственного обеспечения VM, чтобы быть настраиваемым. В этой главе мы рассмотрим шаги, связанные с копированием и расширением государственной машины, чтобы добавить второй жесткий диск в виртуальную машину. Это простой пример, но типичное реальное требование.
+
+=== Scenario
+
+Мы используем поставщика RHEV 3.6 с нашей установкой Manageiq, и мы можем успешно предоставить виртуальные машины, используя * тип положения нативного клона * из полностью настроенных шаблонов TREV. Все шаблоны имеют один диск с тонким диском 30 ГБ.
+
+[NOTE]
+====
+В этой главе API вызовы в диспетчере RHEV с использованием синтаксиса полезной нагрузки API RHEV 3.x. Это немного изменилось с RHV 4.x, и эти примеры не работают правильно с RHV 4.x. Некоторые совместимые сценарии RHV 4.x для CloudForms 4.5 & 4.6 предоставляются https://github.com/pemcg/mastering-automation-in-cloudforms-4.2-and-manageiq-euwe/tree/master/customising_vm_provisioning/scriptsutere]
+====
+
+=== Task
+
+Мы хотели бы, чтобы все виртуальные машины, предоставляемые этими шаблонами, с добавлением второго жесткого диска 30 ГБ добавляли автоматически во время обеспечения. Второй диск должен быть создан в том же домене хранилища RHEV, что и первый диск (то есть не жестко кодируется в домен хранения).
+
+=== Methodology
+
+Измените машину _vmprovision_vm_, чтобы добавить два новых состояния для выполнения задачи. Мы добавим второй диск, используя API Restful REV, используя учетные данные, хранящиеся для поставщика. Мы можем достичь этого в серии шагов.
+
+==== Step 1. Extend the State Machine
+
+Мы собираемся расширить машину для обеспечения виртуальной машины, добавив состояния, но мы не можем сделать это с государственной машиной в заблокированном домене _manageiq_.
+
+===== Copy the State Machine
+
+Первое, что мы должны сделать, это скопировать _manageiq/infrastructure/vm/provisioning/statemachines/vmprovision_vm/provision vm из Template (шаблон) _ экземпляр состояния в наш собственный домен _acme_, чтобы мы могли редактировать схему.
+
+===== Edit the schema
+
+Теперь мы редактируем схему скопированного класса (см. << i2 >>).
+
+[[i2]]
+. Редактирование схемы скопированного класса
+image::images/ss2.png[Screenshot,700,align="center"]
+{zwsp} +
+
+===== Add the new states
+
+Мы добавляем еще два шага, * adddisk * и * startvm * в нижнюю часть схемы (см. << i3 >>).
+
+[[i3]]
+.
+image::images/ss3.png[Screenshot,550,align="center"]
+{zwsp} +
+
+===== Adjust the sequence
+
+Теперь мы корректируем последовательность схемы классов, чтобы наши новые состояния приходили после ** PostProvision ** (см. << i4 >>).
+
+[[i4]]
+. Соответствие последовательности классов схемы
+image::images/ss4.png[Screenshot,450,align="center"]
+{zwsp} +
+
+==== Step 2. Disable Auto-Power-On
+
+Мы собираемся переопределить поведение по умолчанию рабочего процесса, обеспечивающего виртуальную машину, который предназначен для автоматического запуска виртуальной машины после обеспечения. Мы делаем это, потому что хотим добавить наш новый диск с помощью виртуальной машины, а затем впоследствии писать на виртуальной машине.
+
+===== Copy the method
+
+Мы копируем _/Infrastructure/VM/Provisioning/StateMachines/Methods/redhat_customizerequest_ из домена _manageiq_ (если мы используем управление) или из домена _redhat_ (если мы используем Cloudforms) в наш (см. << i5 >>).
+
+[NOTE]
+Домен _redhat_ содержит расширенную версию _redhat_customizerequest_. Мы должны убедиться, что мы копируем и расширяем правильную версию для нашего продукта.
+
+[[i5]]
+.Copying метод redhat_customizerequest в наш собственный домен
+image::images/ss5.png[Screenshot,350,align="center"]
+{zwsp} +
+
+===== Edit the method
+
+Мы редактируем _redhat_customizerequest_, чтобы установить клавишу HASH с параметрами `: vm_auto_start` как` false`. Мы должны сделать это после линии:
+
+[source,ruby]
+----
+prov = $ evm.root ["miq_provision"]
+----
+
+Дополнительные линии следующие:
+
+[source,ruby]
+----
+# Получите объект подготовки
+prov = $ evm.root ["miq_provision"]
+
+#### Добавить следующие строки
+# Установите параметр AutoStart на False, чтобы RHEV не запустил виртуальную машину напрямую
+$ evm.log (: info "
+prov.set_option (: vm_auto_start, false)
+#### Конец дополнительных строк
+
+----
+
+==== Step 3. Create Our New Instances and Methods
+
+Мы создадим новое пространство имен _integration/redhat_ в нашем собственном домене и создадим простой класс с одним полем _methods_, как мы это делали в ссылке: ../ witch_running_our_own_automation_scripts/grape.asciidoc [написание и запуск наших собственных сценариев автоматизации]. Мы добавляем два новых экземпляра _adddisk_ и _startvm_ и два новых метода _add_disk_ и _start_vm_ в этот класс (см. << i6 >>).
+
+[[i6]]
+. Выдвижение двух новых экземпляров и методов
+image::images/ss6.png[Screenshot,320,align="center"]
+{zwsp} +
+
+Затем мы рассмотрим интересные части кода в каждом из методов.
+
+===== add_disk
+
+>
+
+[source,ruby]
+----
+def call_rhev (ServerName, имя пользователя, пароль, действие,
+ref = nil, body_type =: xml, body = nil)
+    #
+# Если ref - это URL, то используйте этот
+    #
+Если не ref.nil?
+url = ref, если ref.include? ('http')
+конец
+url || = "https: //#{servername}#{ref}"
+    
+params = {
+: method => action,
+: url => url,
+: user => имя пользователя,
+: пароль => пароль,
+      :headers => { :content_type=>body_type, :accept=>:xml },
+: verify_ssl => false
+    }
+Params [: power загрузка] = тело, если тело
+rest_response = restclient :: request.new (params) .execute
+    #
+# RestClient поднимает для нас исключение при любой ошибке без 200
+    #
+вернуть rest_response
+конец
+----
+
+В основном разделе кода мы учитываем тот факт, что мы разрешаем _ADD_DISK_ можно было бы вызывать любым из двух способов: с кнопки на виртуальной машине в веб -и или как часть рабочего процесса по обеспечению виртуальной машины. (См. Ссылку: ../ ways_of_entering_automate/gupt.asciidoc [способы ввода автоматизации]). Сначала нам нужно выяснить, как был вызван _ADD_DISK_, и соответственно извлечь объект модели службы виртуальной машины.
+
+Мы также должны определить новый размер диска. Если _ADD_DISK_ был вызван из кнопки, новый размер диска будет передаваться в качестве элемента диалога услуг. Если он называется как часть операции по обеспечению виртуальной машины, мы жестким кодируем это как константа new_disk_size (для этого примера это 30 ГБ):
+
+[source,ruby]
+----
+case $ evm.root ['vmdb_object_type']
+Когда «miq_provision ' # вызовет из рабочего процесса по обеспечению виртуальной машины
+vm = $ evm.root ['miq_provision']. назначение
+disk_size_bytes = new_disk_size*1024 ** 3
+Когда 'vm'
+vm = $ evm.root ['vm'] # Вызовов из кнопки
+disk_size_bytes = $ evm.root ['dialog_disk_size_gb']. to_i*1024 ** 3
+конец
+----
+
+Мы собираемся создать новый диск на том же домене хранения, что и существующий первый диск, поэтому нам нужно найти существующие данные о домене хранения:
+
+[source,ruby]
+----
+storage_id = vm.storage_id Rescue Nil
+  #
+# Извлеките идентификатор домена для хранения, специфичный для хранения
+  #
+разве storage_id.nil? || storage_id.blank?
+Storage = $ evm.vmdb ('storage'). find_by_id (storage_id)
+Storage_domain_id = storage.ems_ref.match (/.*\/ (\ w.*) $/) [1]
+конец
+----
+
+Затем мы извлекаем учетные данные менеджера RHEV (из объекта _ext_managemage_system_), так как нам нужно использовать их, когда мы сделаем вызов остальным. Мы также строим нашу полезную нагрузку XML, используя Gem _nokogiri_:
+
+[source,ruby]
+----
+разве storage_domain_id.nil?
+    #
+# Извлеките IP -адрес и учетные данные для поставщика RHEV
+    #
+ServerName = vm.ext_management_system.ipaddress ||
+vm.ext_management_system.hostname
+username = vm.ext_management_system.authentication_userid
+пароль = vm.ext_management_system.authentication_password
+
+Builder = nokogiri :: xml :: builder.new do | xml |
+xml.disk {
+xml.storage_domains {
+xml.storage_domain: id => storage_domain_id
+        }
+xml.size disk_size_bytes
+xml.type 'System'
+XML.Interface 'Virtio'
+xml.format 'корова'
+xml.bootable 'false'
+      }
+конец
+
+body = builder.to_xml
+----
+
+Мы делаем звонок менеджеру RHEV и анализируем ответ:
+    
+[source,ruby]
+----    
+$ evm.log (: info,
+"Добавление #{disk_size_bytes / 1024 ** 3} gbyte диск в vm: #{vm.name}")
+response = call_rhev (ServerName, имя пользователя, пароль,: post, \
+"#{vm.ems_ref}/диски",: xml, body)
+    #
+# Проанализируйте тело ответа XML
+    #
+doc = nokogiri :: xml.parse (response.body)
+----
+
+Первоначальный ответ обратно от API содержит некоторые HREF, которые нам нужно использовать, поэтому мы извлекаем их:
+    
+[source,ruby]
+---- 
+    #
+# Вытащите несколько многоразовых HREF от первоначального ответа
+    #
+disk_href = doc.at_xpath ("/disk") ['href']
+creation_status_href = \
+doc.at_xpath ("/disk/link [@rel = 'creation_status']") ['href']
+Activate_href = doc.at_xpath ("/disk/action/link [@rel = 'active']") ['href']
+----
+
+Мы опрашиваем API для статуса завершения:
+
+[NOTE]
+Это не хорошая практика «спать» в методе автоматизации. Для простоты в этом примере мы обрабатываем сон -> сами повторно, чтобы избежать возможности сна вечно. В производственной среде мы использовали встроенную логику State Machine Retry, чтобы справиться с этим для нас.
+
+[source,ruby]
+---- 
+    #
+# Подтвердить creation_status (подождите до минуты)
+    #
+creation_status = doc.at_xpath ("/disk/creation_status/state"). Текст
+счетчик = 13
+В то время как Creation_status! = "Завершить"
+счетчик -= 1
+Если счетчик == 0
+Поднимите тайм -аут, ожидая нового диска Creation_status, чтобы достичь \
+\ "Полное \": status = #{creation_status} "
+еще
+Сон 5
+response = call_rHev (ServerName, имя пользователя, пароль: get,
+creation_status_href ,: xml, nil)
+doc = nokogiri :: xml.parse (response.body)
+creation_status = doc.at_xpath ("/creation/status/state"). Текст
+конец
+конец
+----
+
+Если диск был прикреплен к виртуальной машине (как это могло быть, если бы метод вызван из кнопки), нам нужно активировать диск в RHEV. Если виртуальная машина включена при добавлении диска, этот этап не нужен:
+
+[source,ruby]
+---- 
+    #
+# Диск был успешно создан,
+# Теперь проверьте его статус активации и при необходимости активируйте его
+    #
+response = call_rHev (ServerName, имя пользователя, пароль: get,
+disk_href ,: xml, nil)
+doc = nokogiri :: xml.parse (response.body)
+Если doc.at_xpath ("/disk/active"). Text! = "true"
+$ evm.log (: info "Activating Disk")
+body = "<action/>"
+response = call_rhev (ServerName, имя пользователя, пароль,: post,
+Activate_href ,: xml, тело)
+еще
+$ evm.log (: info "Новый диск уже активен")
+конец
+конец
+  #
+# Метод выхода
+  #
+$ evm.root ['ae_result'] = 'ok'
+Выход miq_ok
+----
+
+===== start_vm
+
+Код для * start_vm * выглядит следующим образом:
+
+[source,ruby]
+----
+начинать
+vm = $ evm.root ['miq_provision']. назначение
+$ evm.log (: info, "Current VM Power State = #{vm.power_state}")
+Если vm.power_state == 'on'
+Vm.start
+Vm.Refresh
+$ evm.root ['ae_result'] = 'retry'
+$ evm.root ['ae_retry_interval'] = '30.
+еще
+$ evm.root ['ae_result'] = 'ok'
+конец
+
+rescue => err
+$ evm.log (: error, "[#{err}] \ n#{err.backtrace.join (" \ n ")}")
+$ evm.root ['ae_result'] = 'ошибка'
+конец
+----
+
+Полные сценарии также доступны по адресу https://github.com/pemcg/mastering-automation-in-cloudforms-4.2-and-manageiq-euwe/tree/master/customising_vm_provisioning/scripts=]
+
+==== Step 4. Add Our New Instances to the Copied State Machine
+
+Теперь мы редактируем нашу копированную _provision vm из экземпляра Match Machine Template_, чтобы добавить * adddisk * и * startvm * экземпляры uris в соответствующие шаги (см. << i7 >>).
+
+[[i7]]
+. Добавление экземпляра URI к стату
+image::images/ss7.png[ch22_ss]
+{zwsp} +
+
+==== Step 5. Provision a Virtual Machine
+
+Мы предоставим виртуальную машину, чтобы проверить это. Мы должны увидеть, что виртуальная машина не сразу начинается после создания, и подходящие сообщения в _automation.log_ показывают, что наши дополнительные методы работают:
+
+....
+...<AEMethod add_disk> Adding 30GB disk to VM: rhel7srv006
+...<AEMethod add_disk> Creation Status: pending
+...<AEMethod add_disk> Creation Status: complete
+...<AEMethod add_disk> New disk already active
+...
+...<AEMethod start_vm> Current VM power state = off
+...<AEMethod start_vm> Current VM power state = unknown
+...<AEMethod start_vm> Current VM power state = on
+....
+
+Мы можем взглянуть на количество дисков на странице сведений о виртуальной машине в Webui Manageiq (см. << i8 >>).
+
+[[i8]]
+.Vm детали панели с показом дополнительный диск
+image::images/ss8.png[Screenshot,600,align="center"]
+{zwsp} +
+
+Здесь мы видим второй диск, прикрепленный к виртуальной машине. Наш модифицированный рабочий процесс, обеспечивающий виртуальную машину, был успешным.
+
+=== Summary
+
+Эта глава показала, как мы можем расширить машину для обеспечения состояния, чтобы добавить наши собственные этапы рабочего процесса. Хотя это был простым примером, какое -то расширение рабочего процесса очень распространено на практике. Мы видим еще один пример в ссылке: ../ Integrating_with_satellite_6_during_provisioning/gupt.asciidoc [интеграция со спутником 6 во время обеспечения], где мы расширяем рабочий процесс, чтобы зарегистрировать нашу вновь предоставленную виртуальную машину со спутниковым сервером 6.
+
+Пример также показал функциональность _integration_ CloudForms/Manageiq, и как мы можем использовать вызовы API - в данном случае, используя клиент REST - для расширения наших рабочих процессов на более широкое предприятие.
+
+==== Further Reading
+
+https://access.redhat.com/documentation/en-us/red_hat_enterprise_virtualization/3.6/html/rest_api_guide/index.html® hat enterprise virtualization 3.6 Руководство API REST]
+
+http://www.rubydoc.info/github/rest-client/rest-client= Gem Gem]
+
+http://www.rubydoc.info/github/sparklemotion/nokogiri= Gem]
+

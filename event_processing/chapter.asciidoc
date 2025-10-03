@@ -1,0 +1,729 @@
+[[event-processing]]
+== Обработка событий
+
+Одной из самых мощных функций Manageiq Automate является его возможность обрабатывать __events__. Manageiq может отслеживать и реагировать на внешние (поставщики) события, такие как запуск или остановка виртуальной машины, или гипервизор, занимающийся техническим обслуживанием. Эти события могут затем использоваться в качестве триггеров для автоматизации. Возможно, мы захотите инициировать сканирование анализа Smartstate на новой виртуальной машине VMware, когда будет обнаружено событие * vmcreatedevent *. Возможно, мы хотели бы перехватить и отменить событие * user_initiced_shutdown_vm *, обнаруженное на критической виртуальной машине, которую мы пометили как "do_not_shutdown".
+
+Manageiq Automate также повышает свои собственные события внутри, которые затем можно использовать в качестве триггеров рабочего процесса. Мы видим пример этого, когда мы предоставляем новую виртуальную машину (мы освещаем виртуальную машину в части II книги). Рабочий процесс для обеспечения виртуальной машины включает в себя этап утверждения - мы можем при желании позволить администраторам утверждать большие запросы виртуальной машины - за которым следует этап проверки квот, чтобы убедиться, что пользователи не превышают свою квоту. Успешное одобрение запроса о предоставлении виртуальной реальности приводит к автоматизации автоматизации внутреннего события * request_proved *. Это событие * request_proved * затем используется в качестве триггера для автоматического запуска рабочего процесса проверки квот (см.
+
+В этой главе мы подробно рассмотрим, как события обрабатываются двигателем автоматизации. Это глава «глубокого погружения», содержащая полезную справочную информацию, но может быть пропущена на данный момент, если это необходимо. Обработка событий автоматически происходит в управлении, и понимание рабочего процесса по обработке событий может помочь нам, когда мы продвигаем наши навыки автоматизации. В ссылке: ../ Automation_Request_pesproval/gupt.asciidoc [утверждение запроса автоматизации] Мы создаем совершенно новый рабочий процесс утверждения, основанный в значительной степени на наших знаниях о том, как обрабатываются события.
+
+Чтобы улучшить масштабируемость обработки событий, особенно с появлением новых поставщиков и типов поставщиков, механизм обработки событий был существенно переписан в Manageiq _capablanca_. Сначала мы рассмотрим новые части компонентов обработки событий Automate, а затем изучим, как попадают в внешние события, а внутренние события поднимаются и обрабатываются.
+
+=== Event Processing Component Parts
+
+Это несколько новых компонентов, участвующих в обработке событий в Manageiq _capablanca_, включая тип объекта потока событий, коммутатор событий и обработчики событий.
+
+==== The Event Stream Object
+
+События теперь обрабатываются объектом _event Stream_, полученного из класса родителей _eventStream_. Объект EventTream создается в ответ на внешнее или внутреннее событие, и этот объект отправляется для автоматизации для инициирования процесса обработки событий.
+
+События Введите автоматизацию в экземпляре _/system/process/event_, и это содержит соотношение * rel5 *, которое перенаправляет обработку события в коммутатор событий. Корень коммутатора события в _/system/event_. (См. << i1 >>).
+
+[[i1]]
+. ВОЗВРАЩЕНИЕ Отношения в коммутатор событий
+image::images/ss1.png[Screenshot,900,align="center"]
+{zwsp} +
+
+==== The Event Switchboard
+
+_Event Switchboard_ - это новый набор пространств имен, классов, экземпляров и методов, записанного для обработки событий в масштабируемой манере.
+
+_/System/process/event_ содержит соотношение * rel5 * в коммутатор, и эта URI отношения состоит из трех частей; Пространство имен событий, источник события и тип события. Каждый из них выбран из замены переменной времени выполнения:
+
+----
+/System/event/w
+$ { /#event_stream.source} /
+$ {/#event_type}
+----
+
+Заменяемые значения взяты из атрибутов объекта EventReam, представляющего событие, и типа события.
+
+===== Event stream mamespace
+
+`$ {/#Event_stream.event_namespace}` Часть отношений переводится в одну из четырех _event Stream имен имен npaces_:
+
+* * Customevent *, где мы можем определить наше собственное _management Event_ Alerts
+* * Emsevent * Если происхождение события было _external Management System_ (то есть поставщик). Экземпляр Emsevent содержит всю информацию о ее виртуальной машине, хосте и поставщике, связанной с событием
+* * Miqevent * Если происхождение события было внутренним управлением, инициированным _policy_ событием
+**RequestEvent*Если событие связано с запросом на автоматизацию (например, ** request_created **)
+
+Их можно увидеть в << i2 >>
+
+[[i2]]
+.Event Stream имен имен
+image::images/ss2.png[Screenshot,320,align="center"]
+{zwsp} +
+
+===== Event stream source
+
+В каждом из пространств имен потока событий находятся классы, которые определяют экземпляры _event Stream Source_. Выбор исходного класса сделан из замены _ $ {/#event_stream.source} _ часть отношения _/system/process/event_ * rel5 *. Мы можем видеть, что для пространства имен _emsevent_ они представляют различные _external management Systems_ (Amazon, OpenStack и т. Д.) См. << i3 >>.
+
+[[i3]]
+.EVENT потокового источника
+image::images/ss3.png[Screenshot,350,align="center"]
+{zwsp} +
+
+[[event-type]]
+===== Event type
+
+В соответствии с соответствующими классами источника потока событий есть экземпляры, которые определяют обработку, необходимую для каждого _event type_. Выбор типа события сделан из замены _ $ {/#event_type} _ часть отношения _/system/process/event_ * rel5 *. Мы видим, что они представляют различные события, которые * EventCatcher :: Runner * Работники обнаруживают из автобуса сообщения поставщика. << i4 >> показывает типы событий в пространстве имен _amazon_.
+
+[[i4]]
+.EVENT TIPES для источника потока событий Amazon
+image::images/ss4.png[Screenshot,320,align="center"]
+{zwsp} +
+
+Экземпляры типа события содержат одно или несколько отношений с _event Handlers_ в _/system/event_handlers_ пространство имен, которые определяют, какие действия предпринять для этого события. Например, _amazon_ Event _aws_ec2_instance_running_ вызовет обработчик _event_action_policy_, чтобы протолкнуть новое событие * vm_start * через коммутатор. Он также вызывает обработчик _EVENT_ACTION_REFRESH_, чтобы запустить обновление поставщика, чтобы можно было извлечь детали текущего экземпляра (см. << I5 >>).
+
+[[i5]]
+. Действия, определяемые экземпляром типа события
+image::images/ss5.png[Screenshot,700,align="center"]
+{zwsp} +
+
+==== Event Handlers
+
+Обработчики событий - это экземпляры и методы, которые выполняют фактическую гранулирующую обработку для каждого события. Методы: _builtin_ для эффективности выполнения; Их код не виден в Automate Explorer (см. << i6 >>).
+
+[[i6]]
+.Event обработчика
+image::images/ss6.png[Screenshot,300,align="center"]
+{zwsp} +
+
+=== Catching and Handling External Events
+
+Одна из ролей сервера Manageiq, которые можно настроить, - это _event monitor_. Если мы включим эту роль, мы получим два дополнительных типа рабочих потоков, запустившихся на нашем устройстве, чтобы обнаружить (_catch_) и процесс (_handle_) события внешнего поставщика.
+
+==== Event Catching
+
+Внешние (поставщики) события контролируются работниками _EventCatcher_, и они следят за сообщениями сообщений в реальном времени или событиях на различных поставщиках: AWS: Config для Amazon, AMQP/RabbitMQ для OpenStack, нативного автобуса VMware или событий RHEV-M, открытых через API Restful.
+
+Существует конкретный работник EventCatcher для каждого поставщика, настроенного на устройстве. Работники EventCatcher названы в соответствии с новым форматом пространства провайдеров Manageiq _capablanca_
+
+....
+Manageiq :: Providers :: redhat :: Inframanager :: EventCatcher :: Runner#Process_event) \
+Ems [rhevm01] как [admin@Internal] Полренное событие [user_initied_shutdown_vm]
+Manageiq :: Providers :: redhat :: Inframanager :: EventCatcher :: Runner#Process_event) \
+Ems [rhevm01] как [admin@internal] поймал событие [vm_down]
+...IQ::Providers::Openstack::CloudManager::EventCatcher::Runner#process_event) \
+Ems [rosp-cont] как [администратор] поймал событие [compute.instance.power_on.start]
+....
+
+==== Event Processing
+
+Работники EventCatcher в очереди в обращении и обработке конкретного события одному или нескольким работникам _Eventhandler_. Аргументы, переданные в EventHandler, включают в себя конкретные детали для источника событий.
+
+Мы можем отследить шаги в рабочем процессе обработки событий на событии rhev * user_run_vm *, которое поймало.
+
+===== Step 1
+
+Первое, что мы видим в `evm.log`, - это призыв к Eventhandler, а также аргументы, содержащие идентификаторы API RHEV и HREF, описывающие источник события.
+
+....
+Args: [{: id => "26790", \
+: href => "/api/events/26790", \
+: cluster => {
+: id => "00000001-0001-0001-0001-000000000249", \
+: href => "/api/clasters/00000001-0001-0001-0001-000000000249"}, \
+: data_center => {
+: id => "00000002-0002-0002-0002-000000000314",
+: href => "/api/datacenters/00000002-0002-0002-0002-000000000314"}, \
+: host => {
+: id => "B959325B-C667-4E3A-A52E-FD936C225A1A", \
+: href => "/api/hosts/b959325b-c667-4e3a-a52e-fd936c225a1a"}, \
+: user => {
+: id => "FDFC627C-D875-11E0-90F0-83DF133B58CC", \
+: href => "/api/users/fdfc627c-d875-11e0-90f0-83df133b58cc"}, \
+: vm => {
+: id => "4e7b66b7-080d-4593-b670-3d6259e47a0f", \
+: href => "/api/vms/4e7b66b7-080d-4593-b670-3d6259e47a0f"}, \
+: description => "vm rhel7srv010 запускается на хосте rhelh03.bit63.net", \
+: revility => «Нормальный», \
+: code => 32, \
+    :time=>2016-01-31 15:53:29 UTC, \
+: name => "user_run_vm"}]
+....
+
+===== Step 2
+
+Работник EventHandler подает событие в коммутатор событий, создавая и передавая объект _EMSEVENT_ EventTream в автомат в виде запроса в очереди (мы обсуждаем запросы в очереди больше в ссылке: ../ Distributed_Automation_Processing/guple.asciidoc [обработка распределенной автоматизации]). Эндусы Eventhandlers переводят специфичные для поставщика аргументы (API HREFS) в идентификаторы Manageiq объекта и включают их в качестве аргументов в запрос автоматизации:
+
+....
+Args: [{: object_type => "emsevent", \
+: object_id => 1000000007999, \
+        :attrs=>{:event_id=>1000000007999, \
+: event_stream_id => 1000000007999, \
+: event_type => "user_run_vm", \
+"Vmortemplate :: vm" => 1000000000023, \
+: vm_id => 1000000000023, \
+"Host :: host" => 1000000000002, \
+: host_id => 1000000000002}, \
+: exance_name => "event", \
+: user_id => 1000000000001, \
+: miq_group_id => 1000000000002, \
+: tenant_id => 1000000000001, \
+: Automate_message => nil}]
+....
+
+===== Step 3
+
+Запрос направлен и передается в механизм автоматизации, который создает экземпляры _/system/process/event_ -точка входа в переключатель событий, а также аргументы, передаваемые EventHandler:
+
+....
+<AutomationEngine> создание [/System/Process/Event?
+EventStream%3A%3Aevent_Stream = 1000000007999 & \
+Хозяин%3A%3Ahost = 100000000000002 & \
+Miqserver%3a%3amiq_server = 1000000000001 & \
+Пользователь%3A%3Auser = 100000000000001 & \
+Vmortemplate%3a%3avm = 1000000000023 & \
+event_id = 1000000007999 & \
+event_stream_id = 1000000007999 & \
+event_type = user_run_vm & \
+host_id = 1000000000002 & \
+object_name = event & \
+vm_id = 1000000000023 & \
+vmdb_object_type = event_stream]
+....
+
+===== Step 4
+
+В случае нашего события rhev * user_run_vm *, коммутатор событий направляет обработку в экземпляр _/system/event/emsevent/rhevm/user_run_vm_, который содержит отношения с двумя экземплярами Automation event_handler (см. << i7 >>).
+
+[[i7]]
+. РЕЛИЗАЦИИ В АСМУСКЦИИ _event_handler_
+image::images/ss7.png[Screenshot,500,align="center"]
+{zwsp} +
+
+[[step5]]
+===== Step 5
+
+Соотношение * rel4 * _/system/event/emsevent/rhevm/user_run_vm_ вызовы экземпляра _/system/event_handlers/event_action_policy_, чтобы инициировать создание внутреннего общего * VM_START *.
+
+Это завершает рабочий процесс обработки событий для события _external_ * user_run_vm *.
+
+=== Creating and Processing Internal Events
+
+В дополнение к ловли внешних событий, ManageiQ может повысить свои собственные события, которые могут обрабатывать управляющие политики или оповещения. Они генерируются и обрабатываются двумя внутренними (неавтоматическими) методами, _build_evm_event_ и _process_evm_event_.
+
+==== Event Processing
+
+Мы видели в << Шаг 5 >>, что соотношение * rel4 * экземпляра _/system/event/emsevent/rhevm/user_run_vm_ инициирует создание общего * vm_start *. Мы обнаруживаем, что большинство событий, специфичных для поставщика (например,*user_run_vm*для rhev или*aws_ec2_instance_running*для Amazon), переименованы в их общий эквивалентный событие (например, ** vm_start **).
+
+Мы можем продолжить следовать обработке * user_run_vm * во внутреннее событие * vm_start * путем проверки _evm.log_.
+
+===== Step 6
+
+Мы видим, что _/system/event_handlers/event_action_policy_ обработчик событий вызывается в соответствии с запросом в << Шаг 5 >>:
+
+....
+Вызов [Builtin] Method [/Manageiq/System/Event_handlers/Event_Action_policy] \
+с входами [{"target" => "src_vm", "police_event" => "vm_start", "param" => ""}]
+....
+
+Этот обработчик событий вызывает метод внутреннего _build_evm_event_ для сборки параметров для создания нового * VM_START * Событие:
+
+....
+
+<AutomationEngine> miqaeevent.build_evm_event >> event = <"vm_start">
+inputs = <{: "Manageiq :: Providers :: redhat :: Inframanager :: vm" =>
+#<Manageiq :: Providers :: redhat :: Inframanager :: VM
+ID: 1000000000023,
+                ...>,
+: ext_management_systems =>
+#<Manageiq :: Providers :: redhat :: Inframanager
+ID: 1000000000001,
+                ...>,
+: ems_event =>
+#<Emsevent
+ID: 1000000007999,
+event_type: "user_run_vm",
+Сообщение: "VM RHEL7SRV010 начал с хоста RHELH03.bit63.net",
+                ...>,
+"Miqevent :: miq_event" => 1000000008000,
+: miq_event_id => 1000000008000,
+"EventStream :: Event_stream" => 1000000008000,
+: event_stream_id => 100000000008000}>
+....
+
+===== Step 7
+
+Новое событие находится в очереди для обработки с помощью механизма автоматизации (большая часть работы двигателя автоматизации включает в себя очередь и выполнение дальнейших задач автоматизации работы):
+
+....
+
+Miq (miqaeengine.deliver) поставка {: event_type => "vm_start",
+              :"manageiq::providers::redhat::inframanager::vm"=>
+#<Manageiq :: Providers :: redhat :: Inframanager :: VM
+             ...
+: event_stream_id => 100000000008000} для объекта \
+[Manageiq :: Providers :: redhat :: Inframanager :: Vm.1000000000023] \
+с государством [] для автоматизации
+....
+
+===== Step 8
+
+Двигатель автоматизации передает задачу и создает экземпляры _/system/process/event_ -точка входа в переключатель событий вместе с аргументами, собранными и передаваемыми внутренним методом _build_evm_event_:
+
+....
+
+<AutomationEngine> создание [/System/Process/Event?
+EventStream%3A%3Aevent_Stream = 100000000008000 & \
+Miqevent%3a%3amiq_event = 100000000008000 & \
+Miqserver%3a%3amiq_server = 1000000000001 & \
+Пользователь%3A%3Auser = 100000000000001 & \
+Vmortemplate%3a%3avm = 1000000000023 & \
+ems_event = 1000000007999 & \
+event_stream_id = 1000000008000 & \
+event_type = vm_start & \
+ext_management_systems = 1000000000001 и
+Manageiq%3a%3Aproviders%3A%3AREDHAT%3A%3AINFRAMANAGER%3A%3AVM = 100000000000023 & \ \
+miq_event_id = 1000000008000 & \
+object_name = event & \
+vmdb_object_type = vm] \
+....
+
+===== Step 9
+
+Переключатель событий направляет обработку в экземпляр _/system/event/miqevent/police/vm_start_, которого не существует по умолчанию (мы могли бы создать один, если мы захотим). Экземпляр _/system/event/miqevent/policy/.missing_ запускается на его месте:
+
+....
+Следующие отношения [miqaedb:/system/event/miqevent/policy/vm_start#create]
+
+Экземпляр [/Manageiq/System/event/miqevent/policy/vm_start] \
+не найдено в Miqaedatastore - пытаться [.missing]
+....
+
+Экземпляр _.missing_ содержит отношение * rel2 * с _/system/event_handlers/event_enforce_policy_, поэтому мы следуем цепочке отношений:
+
+....
+Вызов [Builtin] Method [/Manageiq/System/Event_handlers/\
+event_enforce_policy] с входами [{}]
+....
+
+[[step10]]
+===== Step 10
+
+Обработчик событий _EVENT_ENFORCE_POLICY_ инициирует обработку любых политик управления и оповещений, которые могут быть связаны с обработанным событием.
+
+Это завершает рабочий процесс обработки событий для события _internal_ * vm_start *.
+
+==== Event-Initiated Control Policy Processing
+
+Следующая часть рабочего процесса по обработке событий обрабатывает любые политики управления, которые мы могли бы связать с этим событием. Именно здесь, например, мы будем инициировать сканирование анализа Smartstate на * VM Create * Complete * Policy Event.
+
+Мы можем продолжать отслеживать обработку событий из предыдущих разделов, которое началось с того, что событие rhev * user_run_vm * было поймано. Мы видели << Шаг 10 >> вызов _/system/event_handlers/event_enforce_policy_.
+
+Этот метод вызывает внутренний метод `process_evm_event` с аргументом * target *, соответствующий объекту виртуальной машины, который поднял событие:
+
+....
+Miq (miqevent#process_evm_event) \
+target = [#<Manageiq :: Providers :: redhat :: Inframanager :: vm \
+ID: 1000000000023, ...>]
+....
+
+===== Step 11
+
+Внутренний метод _process_evm_event_ повышает событие*vm_start*(** vm power на **) _policy_ и обрабатывает любые действия (то есть политики управления), связанные с запуск этого события политики:
+
+....
+Miq (miqevent#process_evm_event) Событие повышено [vm_start]
+....
+
+В нашем случае у нас есть политика управления виртуальной машиной, которая запускает * вызововое действие автоматизации *, когда запускается событие * VM Power on *. Индивидуальный экземпляр автоматизации запускается _/methops/methods/objectwalker_ (через _/system/request/call_instance_) (см. << i8 >>).
+
+[[i8]]
+.VM Политика управления, которая связывает *VM Power On *Событие с *запустить ObjectWalker *
+image::images/ss9.png[Screenshot,400,align="center"]
+{zwsp} +
+
+===== Step 12
+
+Запрос автоматизации для запуска _call_instance_ находится в очереди на обработку с помощью механизма автоматизации. Впоследствии это доставляется и доставлен для автоматизации:
+
+....
+Miq (miqaeengine.deliver) Доставка \
+{"пространство имен" => "материал", \
+«класс» => «методы», \
+"экземпляр" => "ObjectWalker", \
+: request => "call_instance", \
+"Miqpolicy :: miq_policy" => 1000000000001} \
+Для объекта [vmortemplate.1000000000023] с состоянием [] для автоматизации
+....
+
+Мы видим object_walker, работающий в _automation.log_.
+
+==== Event-Initiated Alert Processing
+
+Последняя часть рабочего процесса по обработке событий обрабатывает любые оповещения, которые мы могли бы связать с этим событием.
+
+===== Step 13
+
+Внутренний метод _process_evm_event_ теперь повышает предупреждение*vm_start*(** vm: vm power на **) и обрабатывает любые действия, связанные с запуск этого предупреждения:
+
+....
+Miq (miqevent#process_evm_event) предупреждение о событии [vm_start]
+....
+
+В нашем случае у нас есть предупреждение, которое отправляет * Management Event * Called _test_, когда запускается операция * VM: VM Power * Alert (см. << i9 >>).
+
+[[i9]]
+. Оповещение о отправке мероприятия по управлению тестированием
+image::images/ss10.png[Screenshot,400,align="center"]
+{zwsp} +
+
+===== Step 14
+
+Оповещение в очереди для обработки с помощью внутреннего метода _evaluate_alerts_, и наше событие _test_ запускается:
+....
+Miq (miqalert.evaluate_alerts) [vm_start] цель: \
+Manageiq :: Providers :: redhat :: Inframanager :: vm name: [rhel7srv010], \
+Идентификатор: [1000000000023] Оценка очередей предупреждения: [VM включена в действие]
+....
+
+Это завершает полный рабочий процесс обработки событий, который начался, когда было обнаружено событие * user_run_vm * от поставщика RHEV. Мы видели, как рабочий процесс прошел через четыре этапа; обработка внешнего события; Повышение и обработка соответствующего внутреннего события, а также последующая политика управления и обработка оповещения, которые могли быть связаны с типом события.
+
+=== Event-Initiated Automation Request Workflows
+
+Рабочие процессы двигателя автоматизации, которые включают разделенные запросы и задачи (см. << запросы и задачи >>) также используют поднятые события для управления последовательности обработки.
+
+Мы можем подробно взглянуть на рабочий процесс двигателя автоматизации, изучив шаги, связанные с обработкой вызова API REST для запуска экземпляра Automate _/Stuff/Methods/test_.
+
+Мы знаем, что этот тип вызова API будет обрабатываться на этапах _request_ и _task_, где «задача» является фактическим запуском нашего сценария автоматизации. Мы также знаем, что запросы должны идти, хотя и утверждающий рабочий процесс. Мы можем следовать последовательности шагов посредством обработки различных событий, используя _automation.log_ и полезные «следующие». Следуют «сообщения», которые печатает двигатель.
+
+==== Step 1 - The request_created Event
+
+Первые сообщения, которые мы видим после того, как вызов API был сделан, сообщают нам о событии * request_created *. Мы смотрим на Manageiq _capablanca_, поэтому мы видим новую информацию о потоке событий, добавленную в событие:
+
+....
+Miq (AutomationRequest#call_automate_event) \
+Событие по поднятию [request_created] для автоматизации
+Miqaeevent.build_evm_event >> event = <"request_created"> \
+inputs = <{"Eventtream :: Event_stream" => 1000000009327, \
+: event_stream_id => 1000000009327}>
+Miq (AutomationRequest#call_automate_event) \
+Повышенное событие [request_created] для автоматизации
+Компания [/system/process/event? \
+AutomationRequest%3A%3AAutomation_Request = 1000000000029 & \
+EventStream%3A%3Aevent_Stream = 1000000009340 & \
+Miqrequest%3a%3amiq_request = 1000000000029 & \
+Miqserver%3a%3amiq_server = 1000000000001 & \
+Пользователь%3A3Auser = 1000000000001 и \
+event_stream_id = 1000000009340 & \
+event_type = request_created & \
+object_name = event & \
+vmdb_object_type = Automation_Request]
+....
+
+Здесь мы видим, что событие запускается, которое приводит нас к стандартному экземпляру _/system/process/event_ event_. Как мы видели, _/System/Process/Event_ направляет нас в коммутатор событий.
+
+----
+/SSYSTEM/EVENT/DAIC
+$ {/#event_stream.source}/$ {/#event_type}
+----
+
+===== Step 1.1
+
+Переменные замены сделаны из атрибутов объекта EventReam, и мы следуем цепочке отношений через распределение:
+
+....
+Следующие отношения [miqaedb:/system/event/requestevent/request/\
+request_created#create]
+....
+
+===== Step 1.2
+
+Экземпляр _/system/event/requestevent/request/request_created_ содержит одно * rel5 * отношение к _/system/police/request_created_. Еще раз мы следим за цепочкой отношений:
+
+....
+Следующие отношения [miqaedb:/system/police/request_created#create]
+....
+
+===== Step 1.3
+
+Сейчас мы находимся в пространстве _/system/police_ names, где определяются специфические для события политики, т. Е. Что делать, когда этот тип события происходит_. Экземпляры в этом пространстве имен обычно имеют несколько записей (см. << i10 >>).
+
+[[i10]]
+. Схема экземпляра/system/police/request_created
+image::images/ss12.png[Screenshot,380,align="center"]
+{zwsp} +
+
+Событие * request_created * поднимается для всех типов запроса, поэтому до того, как может быть реализована какая-либо политика, специфичная для событий, необходимо определить _type_ запроса.
+
+===== Step 1.4
+
+_/System/police/request_created_ экземпляр сначала запускает метод _get_request_type_, чтобы выяснить, какой тип запроса был создан:
+
+....
+Вызов [inline] Method [/Manageiq/System/police/get_request_type] \
+с входами [{}]
+<Aemethod [/Manageiq/System/policy/get_request_type]> Запуск
+<Aemethod get_request_type> Тип запроса: <AutomationRequest>
+<Aemethod [/Manageiq/System/policy/get_request_type]> окончание
+....
+
+Метод _GET_REQUEST_TYPE_ возвращает "Тип запроса: <AutomationRequest>".
+
+===== Step 1.5
+
+Следующая запись в схеме _/system/police/request_created_ - это * rel4 * отношение к _/system/process/parse_provider_category_, поэтому мы продолжаем следовать цепочке отношений:
+
+....
+Следующие отношения [miqaedb:/system/process/parse_provider_category#create]
+....
+
+Некоторая обработка событий может быть специфичной для поставщика, например, мы можем по-другому обращаться с одним и тем же событием, в зависимости от того, пришло ли оно из VMware или OpenStack. Отношение * rel4 * от _/system/police/request_created_ ведет нас в экземпляр _parse_provider_category_, чтобы определить поставщика.
+
+Экземпляр _parse_provider_category_ запускает метод _parse_provider_category_:
+
+....
+Вызов [inline] Method [/Manageiq/System/Process/parse_provider_category] \
+с входами [{}]
+<Aemethod [/Manageiq/System/Process/parse_provider_category]> Запуск
+<Aemethod parse_provider_category> Категория категории Parse: Nil \
+Значение: неизвестно
+<Aemethod [/Manageiq/System/Process/parse_provider_category]> окончание
+....
+
+Метод _parse_provider_category_ возвращает значение * значения * из «Неизвестно», поскольку этот запрос автоматизации не включает в себя какие -либо операции _provider_ (как если бы мы были, например, предоставляли виртуальную машину).
+
+===== Step 1.6
+
+Окончательная запись в схеме _/system/police/request_created_ - это * rel5 * отношение к _/system/police/AutomationRequest_created_ ("AutomationRequest", заменяя _ $ {#request_type}) _.
+
+Этого не существует, поэтому мы видим предупреждающее сообщение:
+
+....
+Экземпляр [/Manageiq/System/police/AutomationRequest_created] не найден в \
+Miqaedatastore - Попытка [.missing]
+....
+
+Мы можем создать экземпляр _/system/police/AutomationRequest_created_, если мы выберем, но в этом случае экземпляр _.missing_ ничего не делает, поэтому мы заканчиваем эту цепочку, инициированную событием.
+
+==== Step 2 - The request_approved Event
+
+Следующее событие, которое мы видим, - это *request_proved *, которое следует за очень похожей цепочкой отношений (мы находим, что *request_proved *выполняется почти одновременно с *request_created *, потому что мы указали `: auto_approve` как` true` в вызове API запроса на автоматизацию). Здесь мы видим извлечение из _evm.log_:
+
+....
+Miq (AutomationRequest#call_automate_event) \
+Событие по поднятию [request_approved] для автоматизации
+Miqaeevent.build_evm_event >> event = <"request_appuder"> \
+inputs = <{"Eventtream :: Event_stream" => 1000000009436,
+: event_stream_id => 100000000009436}>
+Miq (AutomationRequest#call_automate_event) \
+Повышенное событие [request_approved] для автоматизации
+Компания [/system/process/event? \
+AutomationRequest%3A%3AAutomation_Request = 100000000000031 & \
+EventStream%3A%3Aevent_Stream = 1000000009436 & \
+Miqrequest%3a%3amiq_request = 100000000000031 & \
+Miqserver%3a%3amiq_server = 1000000000001 & \
+Пользователь%3A%3Auser = 100000000000001 & \
+event_stream_id = 1000000009436 & \
+event_type = request_approd & \
+object_name = event & \
+vmdb_object_type = Automation_Request]
+....
+
+===== Step 2.1
+
+....
+Следующие отношения [miqaedb:/system/event/requestevent/request/\
+request_approved#create]
+....
+
+===== Step 2.2
+
+....
+Следующие отношения [miqaedb:/system/policy/request_proved#create]
+....
+
+===== Step 2.3
+....
+Следующие отношения [miqaedb:/system/process/\
+parse_provider_category#создать]
+Вызов [Inline] Method [/Manageiq/System/Process/\
+parse_provider_category] с вводами [{}]
+<Aemethod [/Manageiq/System/Process/parse_provider_category]> Запуск
+<Aemethod parse_provider_category> Категория категории Parse: Nil \
+Значение: неизвестно
+<Aemethod [/Manageiq/System/Process/parse_provider_category]> окончание
+
+....
+===== Step 2.4
+
+....
+Следующие отношения [miqaedb:/system/policy/\
+AutomationRequest_PAPPOD#CREATE]
+Экземпляр [/Manageiq/System/Police/AutomationRequest_proprod] не найден \
+В Miqaedatastore - Попытка [.missing]
+....
+
+Обработка событий * request_proved * не вызывает _get_request_type_, поскольку на этом этапе нет необходимости в обработке, специфичной для типа.
+
+Еще раз у нас нет метода _automationRequest_prupudive_, поэтому мы заканчиваем эту инициированную событием цепь на этом этапе.
+
+==== Step 3 - The request_starting Event
+
+Третье событие, которое мы видим, - это *request_starting *. На этом этапе мы работаем в контексте запроса на автоматизацию; Каждому из этих строк журнала предшествует текст "q-task_id ([Automation_Request_1000000000031])".
+
+....
+Miq (AutomationRequest#call_automate_event_sync) \
+Событие по повышению [request_starting] для автоматизации синхронного
+Miqaeevent.build_evm_event >> event = <"request_starting"> \
+inputs = <{"Eventtream :: Event_stream" => 1000000009437,
+: event_stream_id => 100000000009437}>
+
+Компания [/system/process/event? \
+AutomationRequest%3A%3AAutomation_Request = 100000000000031 & \
+EventStream%3A%3Aevent_Stream = 1000000009437 & \
+Miqrequest%3a%3amiq_request = 100000000000031 & \
+Miqserver%3a%3amiq_server = 1000000000001 & \
+Пользователь%3A%3Auser = 100000000000001 & \
+event_stream_id = 1000000009437 & \
+event_type = request_starting & \
+object_name = event & \
+vmdb_object_type = Automation_Request]
+....
+
+===== Step 3.1
+....
+Следующие отношения [miqaedb:/system/event/requestevent/request/\
+request_starting#create]
+....
+===== Step 3.2
+....
+Следующие отношения [miqaedb:/system/policy/request_starting#create]
+Вызов [inline] Method [/Manageiq/System/police/get_request_type] \
+с входами [{}]
+<Aemethod [/Manageiq/System/policy/get_request_type]> Запуск
+<Aemethod get_request_type> Тип запроса: <AutomationRequest>
+<Aemethod [/Manageiq/System/policy/get_request_type]> окончание
+....
+===== Step 3.3
+....
+Следующие отношения [miqaedb:/system/process/\
+parse_provider_category#создать]
+Вызов [Inline] Method [/Manageiq/System/Process/\
+parse_provider_category] с вводами [{}]
+<Aemethod [/Manageiq/System/Process/parse_provider_category]> Запуск
+<Aemethod parse_provider_category> Категория категории Parse: Nil \
+Значение: неизвестно
+<Aemethod [/Manageiq/System/Process/parse_provider_category]> окончание
+....
+===== Step 3.4
+....
+Следующие отношения [miqaedb:/system/policy/\
+AutomationRequest_Starting#CREATE]
+Экземпляр [/Manageiq/System/Police/AutomationRequest_Starting] \
+не найдено в Miqaedatastore - пытаться [.missing]
+....
+===== Step 3.5
+....
+Miq (AutomationRequest#call_automate_event_sync) \
+Повышенное событие [request_starting] для автоматизации
+....
+
+В конце этой цепочки мы видим запрос на автоматизацию в очереди задачу автоматизации:
+
+....
+Q-task_id ([Automation_Request_1000000000031]) \
+Miq (AutomationTask#deliver_to_automate) \
+Запрос на автоматизацию в очереди: [задача автоматизации] ...
+Q-task_id ([Automation_Request_1000000000031]) \
+Miq (AutomationTask#execute_queue) \
+Запрос на автоматизацию в очереди: [задача автоматизации] ...
+....
+
+==== Step 4 - Automation Task Processing
+
+Наконец, мы видим, как действует фактическая задача автоматизации, которая вызывает наш экземпляр _/материал/методы/test_. На этом этапе каждой из этих строк журнала предшествует текст «Q-Task_id ([Automation_TASK_1000000000034]), чтобы указать, что мы работаем в контексте задачи автоматизации.
+
+....
+MIQ (AutomationTask#Exepute) Запрос на автоматизацию: \
+                                                                [Automation Task]
+MIQ (AutomationTask#execute) Запрос автоматизации инициирован
+Компания [/материал/методы/тест? \
+AutomationTask%3A%3AAutomation_task = 100000000000034 & \
+Miqserver%3a%3amiq_server = 1000000000001 & \
+Пользователь%3A%3Auser = 100000000000001 & \
+object_name = test & \
+userid = admin & \
+vmdb_object_type = Automation_task]
+Вызов [inline] Method [/stuff/method/test] с входами [{}]
+<Aemethod [/stuff/method/test]> Запуск
+<Aemethod test> Это тест!
+<Aemethod [/stuff/method/test]> окончание
+Метод выходит с RC = MIQ_OK
+....
+
+=== Extending Automate Event Handling
+
+Специфичные для поставщика классы источника потока событий и связанные с ними экземпляры в рамках _/system/event/emsevent_ не обязательно обрабатывают каждое возможное событие, которое может быть поднято поставщиком. Иногда нам нужно расширить обработку событий, чтобы обработать не по умолчанию события.
+
+Мы можем расширить обработку событий вне коробки, создав наши собственные экземпляры в рамках _/system/event/emsevent/{поставщик} _, чтобы обрабатывать эти события, не являющиеся деко-по умолчанию, пойманные работниками Eventcatcher.
+
+В качестве примера событие * compute.instance.power_on.end * OpenStack не было обработано по умолчанию с CloudForms 4.0/Manageiq _capablanca_ (это было добавлено в CloudForms 4.1/ManagiQ _Darga_). Если бы мы посмотрели в _evm.log_, мы бы увидели:
+
+....
+Экземпляр [/Manageiq/System/event/emsevent/openstack/\
+compute.instance.power_on.end] не найден в Miqaedatastore - Попытка [.missing]
+....
+
+В результате плиточный квадрант экземпляра Cloud в веб -салоне, который показывает состояние мощности, не изменился, чтобы отразить питание экземпляра. Однако это было легко исправить.
+
+==== Adding a New Automation Instance to /System/Event/EmsEvent/
+
+Уже была _manageiq/system/event/emsevent/openstack/compute.instance.power_off.end_ экземпляр для обработки события * compute.instance.power_off.end *. Этот экземпляр вызывает два event_handlers (см. << i11 >>).
+
+[[i11]]
+.Event Handlers, вызванные экземпляром compute.instance.power_off.end
+image::images/ss13.png[Screenshot,600,align="center"]
+{zwsp} +
+
+Мы можем скопировать этот экземпляр в нашем домене и переименовать его как _/system/event/emsevent/openstack/compute.instance.power_on.end_ (см. << i12 >>).
+
+[[i12]]
+. Creating a Compute.instance.power_on.end экземпляр
+image::images/ss14.png[Screenshot,350,align="center"]
+{zwsp} +
+
+Мы меняем вторую строку Event_handler, чтобы запустить A * VM_START * Событие политики (см. << I13 >>).
+
+[[i13]]
+. Редактирование обработчиков событий по мере необходимости
+image::images/ss15.png[Screenshot,600,align="center"]
+{zwsp} +
+
+Теперь, когда мы питаемся на экземпляре OpenStack, мы видим правильное изменение квадранта экземпляра, и мы наблюдаем поднятие и обработку события * vm_start *:
+
+....
+Компания [/system/process/event? \
+EventStream%3A%3Aevent_Stream = \
+1000000009501 & miqevent%3A%3AMIQ_EVENT = 1000000009501 & \
+Miqserver%3a%3amiq_server = 1000000000001 & \
+Пользователь%3A%3Auser = 100000000000001 & \
+Vmortemplate%3a%3avm = 100000000000035 & \
+ems_event = 1000000009500 & \
+event_stream_id = 1000000009501 и \
+event_type = vm_start & \
+ext_management_systems = 1000000000002 & \
+Manageiq%3a%3Aproviders%3A%3AOPENSTACK%3A%3ACLOUDMAGER%3A%3AVM = \
+                                                                 1000000000035& \
+miq_event_id = 100000000009501 & \
+object_name = event & \
+vmdb_object_type = vm]
+....
+
+Это гарантировало, что любая политика управления, которые запускаются с помощью * VM Power On * Event, работали правильно.
+
+=== Summary
+
+Профь! Это была длинная теоретическая глава, которая привлекла нас к подробному туру о том, как двигатель автоматизации обрабатывает события.
+
+Мы ознакомились с компонентными частями нового механизма обработки событий в CloudForms 4.0/Manageiq _capablanca_. Мы видели, как обнаружены внешние события поставщика («пойман»), и обрабатывались, и мы следили за рабочим процессом по обработке событий после обнаружения события поставщика RHEV до повышения соответствующего внутреннего события и увидели, как обрабатываются связанные политики и оповещения.
+
+Мы видели, что автоматизация действий, включающих разделенные запросы и задачи, также используют рабочие процессы, инициированные событиями, и мы видели, как расширить обработку событий для обработки дополнительных событий.
+
+=== Next Steps
+
+Это завершается часть I книги. Теперь у нас есть достаточно знаний об автоматическом хранилище данных и структурах, концепциях и объектах, которые он включает, чтобы иметь возможность решать большинство проблем автоматизации.
+
+В части II мы будем использовать эти знания для хорошего использования и начнем исследовать автоматические операции, связанные с обеспечением виртуальной машины.

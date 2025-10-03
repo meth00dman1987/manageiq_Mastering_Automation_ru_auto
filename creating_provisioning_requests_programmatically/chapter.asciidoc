@@ -1,0 +1,340 @@
+[[creating-provisioning-requests-programmatically]]
+== Создание запросов на обеспечение программно
+
+Как мы видели, наиболее распространенным способом предоставления виртуальной машины является CloudForms или Manageiq Webui (см. Мы нажимаем на *LifeCycle -> Предоставление виртуальных машин *, завершаем диалог обеспечения, и через несколько минут наша новая виртуальная машина готова.
+
+Однако бывают случаи, когда полезно иметь возможность автоматизировать инициацию рабочего процесса, обеспечивающего виртуальную машину, без ручного взаимодействия. Это позволяет нам автоматически масштабировать нашу виртуальную инфраструктуру, основываясь на критериях в реальном времени или ожидаемой производительности. Мы можем запустить процесс обеспечения программно, либо с помощью «$ evm.execute» из работающего скрипта автоматизации, чтобы запустить метод `create_provision_request` (см. Ссылку: ../ EVM_AND_THE_WORKSPACE/grave.asciidoc [$ evm и рабочая пространство] для получения дополнительной информации об этих методах) или с использованием Restful API.
+
+=== Calling create_provision_request
+
+Метод `create_provision_request` принимает массив аргументов, которые соответствуют списку аргументов для исходного вызова API EvmProvisionRequestex SOAP. Типичный призыв к предоставлению виртуальной машины может быть:
+
+[source,ruby]
+----
+# arg1 = версия
+args = ['1.1']
+
+# arg2 = шаблонфилды
+args << {'name' => 'rhel7-generic',
+'request_type' => 'шаблон'}
+
+# arg3 = vmfields
+args << {'vm_name' => 'rhel7srv010',
+'vlan' => 'public',
+'vm_memory' => '1024'}
+
+# arg4 = запрашивающий
+args << {'antuctor_email' => 'pemcg@bit63.com',
+'владелец_first_name' => 'peter',
+'antuction_last_name' => 'mcgowan'}
+
+# arg5 = теги
+Args << nil
+
+# arg6 = extravalues ​​(ws_values)
+args << {'disk_size_gb' => '50',
+'MountPoint' => '/opt'}
+
+# arg7 = emscustomattributes
+Args << nil
+
+# arg8 = miqcustomattributes
+Args << nil
+
+request_id = $ evm.execute ('create_provision_request', *args)
+----
+
+==== Argument List
+
+Аргументы к вызову `create_provision_request` описаны ниже. Аргументы соответствуют полям в диалоговом окне подготовки (и значениях из соответствующего шаблона YAML), и любые аргументы, которые установлены в «Требуется: true» в диалоговом окне YAML, но не имеют `: значение по умолчанию:` Значение. Исключением для этого является подразделения других параметров, например, если `: provision_type:` is _pxe_, тогда подоплекция `: pxe_image_id:` является обязательным. Если значение `: provision_type:` - это что -то еще, то `: pxe_image_id:` не имеет отношения.
+
+В версиях CloudForms/Manageiq до 4.0/_capablanca_ аргументы были указаны как строка, с каждым значением, разделенным символом трубы ('|'), как так:
+
+[source,ruby]
+....
+"VM_NAME = RHEL7SRV010 | vlan = public | vm_memory = 1024"
+....
+
+С 4.0/_capablanca_ Однако этот синтаксис устарел, и параметры в каждом типе аргумента должны определяться как хэш, как показано в предыдущем примере. Это более совместимо с эквивалентным вызовом API Restful для создания запроса на подготовку.
+
+_Value_ для каждой пары аргументов с хешированием всегда должна быть строкой, например:
+
+[source,ruby]
+....
+{'number_of_vms' => '4'}
+....
+
+скорее, чем:
+
+[source,ruby]
+....
+{'number_of_vms' => 4}
+....
+
+===== version
+
+Аргумент _version_ относится к версии интерфейса. Он будет установлен на 1.1
+
+===== templateFields
+
+Аргумент _templatefields_ обозначенные поля с указанием виртуальной машины или шаблона для использования в качестве источника для операции обеспечения. Мы поставляем _guid_ или _EMS_GUID_, чтобы защитить от соответствия шаблонов с одинаковым названием на разных поставщиках в управлении. В настоящее время поддерживается единственным полем `request_type`, например:
+
+[source,ruby]
+----
+'request_type' => 'шаблон'
+----
+
+[[vmfields]]
+===== vmFields
+
+_vmfields_ позволяет настройку свойств из каталога *, *, *, *, *сети *, *настройки *и *расписания *вкладок в диалоговом окне обеспечения. Некоторые из них являются специфичными для поставщика, поэтому, например, при обеспечении экземпляра OpenStack нам необходимо указать `exance_type`
+
+[source,ruby]
+----
+# arg2 = vmfields
+arg2 = {'number_of_vms' => '3',
+'exance_type' => '100000000000007', # m1.small
+'vm_name' => "#{$ exaction_name}",
+'retirement_warn' => "#{2.weeks}"}
+args << arg2
+----
+
+===== requester
+
+Аргумент _Requester_ позволяет создавать настройку свойств с вкладки * запроса * в диалоговом окне «Подготовка». `worment_email`,` antuctor_first_name` и `womine_last_name` требуются поля.
+
+===== tags
+
+Аргумент `Tags` относится к тегам для применения к недавно созданной виртуальной машине, например:
+
+[source,ruby]
+----
+{'server_role' => 'web_server',
+'stod_centre' => '0011'}
+----
+
+===== additionalValues (aka ws_values)
+
+_AdditionAlValues_, также известный как _WS_VALUES_, являются парами имени/значения, хранящиеся с помощью запроса о предоставлении, но не используются в коде основного обеспечения. Эти значения обычно ссылаются из автоматических методов для пользовательской обработки. Они добавляются в хэш вариантов запроса и могут быть извлечены в качестве хэша из:
+
+[source,ruby]
+----
+$ evm.root ['miq_provision']. Options [: ws_values]
+----
+
+===== emsCustomAttributes
+
+_emscustomattributes_ - это пользовательские атрибуты, применяемые к виртуальной машине через поставщика как часть обеспечения. Не все поставщики поддерживают это, хотя VMware поддерживает нативные пользовательские атрибуты vCenter, которые, если установить, видны как в управлении, так и в пользовательском интерфейсе vSphere/vCenter.
+
+===== miqCustomAttributes
+
+_miqcustomattributes_ - это пользовательские атрибуты, применяемые к виртуальной машине и хранятся в VMDB как часть обеспечения. Эти пользовательские атрибуты, специфичные для VMDB, отображаются на странице данных VM (см. Ссылку: ../ Working_with_virtual_machines/grail.asciidoc [работа с виртуальными машинами] для примера настройки пользовательского атрибута из сценария).
+
+==== Setting Placement Options
+
+Код Rails, который реализует вызов `create_provision_request`, предполагает, что любой неинтерактивный запрос предоставления будет использовать автоматическое размещение, и он устанавливает параметры` [: placement_auto] = [true, 1] `в качестве опции запроса. Это также означает, однако, что он игнорирует любые параметры vmfields, которые мы можем установить, которые обычно находятся в вкладке * Environment * интерактивного запроса о предоставлении, таких как `cloud_tenant` или` cloud_network` (см. << i1 >>). Эти настройки скрыты в WebUI, если мы выберем *Выберите автоматически *.
+
+[[i1]]
+.Ssiting параметры размещения среды для экземпляра облака
+image::images/ss1.png[Screenshot,450,align="center"]
+{zwsp} +
+
+С помощью CloudForms 4.1/Manageiq _Darga_, а затем мы можем переопределить это поведение, явно установив `: placement_auto` как` false` в аргументе vmfields, а затем установив параметры размещения сами, следующим образом:
+
+[source,ruby]
+----
+arg2 = {
+"vm_name" => "test_001",
+"exance_type" => "2",
+"Placement_auto" => "false",
+"Placement_availability_zone" => "2",
+"cloud_network" => "2",
+"cloud_subnet" => "3",
+"Security_Groups" => "64"
+},
+----
+
+Обратите внимание, что мы должны указать идентификаторы объекта как значения для этих связанных с размещением хэш-клавиш.
+
+=== Creating a Provisioning Request Using the RESTful API
+
+Мы можем программно выпустить запрос на подготовку, выпустив сообщение в **/API/provision_requests ** rest uri. Наши параметры сообщения аналогичны списку аргументов для `create_provision_request`, например:
+
+[source,ruby]
+----
+post_params = {
+'version' => '1.1',
+'template_fields' => {
+'name' => 'rhel72-generic',
+'request_type' => 'шаблон'
+    },
+'vm_fields' => {
+'number_of_cpus' => '1',
+'vm_name' => 'rhel7srv012',
+'vm_memory' => '2048',
+'vlan' => 'public'
+    },
+'requester' => {
+'владелец_first_name' => 'peter',
+'whing_last_name' => 'mcgowan',
+'antuctor_email' => 'pemcg@bit63.com',
+    },
+'Tags' => {
+'location' => 'winchester'
+    },
+'extra_values' => {
+'disk_size_gb' => '50',
+'MountPoint' => '/opt'
+    },
+'ems_custom_attributes' => {},
+'miq_custom_attributes' => {}
+} .to_json
+----
+
+Поскольку мы обычно делаем несколько вызовов в API REST в рамках программного обеспечения, более эффективно запросить токен аутентификации один раз, а затем использовать его с последующими вызовами следующим образом:
+
+[source,ruby]
+----
+api_uri = 'https: // myserver/api'
+url = uri.encode (api_uri + '/auth')
+rest_return = restclient :: request.execute (
+Метод :: get,
+URL: URL,
+: user => имя пользователя,
+: пароль => пароль,
+                          :headers    => {:accept => :json},
+verify_ssl: false)
+auth_token = json.parse (rest_return) ['auth_token']
+----
+
+Как только у нас появится токен аутентификации, мы сможем выпустить пост с нашими параметрами обеспечения в качестве полезной нагрузки, например, так:
+
+[source,ruby]
+----
+url = uri.encode (api_uri + '/provision_requests')
+rest_return = restclient :: request.execute (
+Метод :: post,
+URL: URL,
+                          :headers    => {:accept        => :json, 
+'x-auth-token' => auth_token},
+: payload => post_params,
+verify_ssl: false)
+result = json.parse (rest_return)
+request_id = result ['results'] [0] ['id']
+----
+
+Идентификатор запроса возвращается нам в корпусе результатов, и мы можем опросить это, используя операцию GET, чтобы определить состояние предварительной операции.
+
+[source,ruby]
+----
+url = uri.encode (api_uri + "/provision_requests/#{request_id}")
+rest_return = restclient :: request.execute (
+Метод :: get,
+URL: URL,
+                          :headers    => {:accept        => :json, 
+'x-auth-token' => auth_token},
+verify_ssl: false)
+----
+                                            
+=== Identifying Valid Key Names for the Arguments
+
+Ключевые имена, которые мы должны указать в различных хэшах аргумента, соответствуют ключам в вариантах подготовки хэша (см. << the-options-hash >>). Мы могли бы использовать любой из наших методов расследования отладки, чтобы определить их, но CloudForms 4.1/ManagiQ _Darga_ добавил полезный инструмент командной строки под названием __rebuild_provision_request.rb__, который мы можем использовать для изучения вариантов, которые использовались в предыдущем запросе, даже тот, который был инициирован из Webui. При желании мы можем скопировать или повторно запустить запрос с помощью наших собственных модификаций, используя API REST, если мы пожелаем, используя тот же инструмент.
+
+Допустимые параметры командной строки для __rebuild_provision_request.rb__ являются следующими:
+
+[source,bash]
+----
+# Rails Runner Tools/rebuild_provision_request.rb - -help
+
+Использование: Rails Runner Tools/Rebuild_provision_Request.rb [-Options]
+
+Параметры:
+
+-a,-api-host = <s> имя хоста для запуска вызова API (по умолчанию: localhost)
+-c, -console показывать выход, необходимый для запуска поста в консоли рельсов
+-О, -count = <i> Настроить количество идентификаторов запроса (требуется -l) (по умолчанию: 5)
+-l,-last-requests Показать список последних 5 идентификаторов запроса
+-t, - -output = <s> выходной формат (хэш, json) (по умолчанию: хэш)
+-p, -password = <s> пароль, необходимый для запроса API (по умолчанию: SmartVM)
+-n, -port = <i> Порт прослушивает запрос (по умолчанию: 3000)
+-q, -quiet удалить многословный выход
+-r,-request-id = <i> Запрос автоматического
+-g, -run-it запустите запрос API после вывода значений
+-s, - -SSL Используйте SSL при разговоре с API
+-u, -username = <s> Имя пользователя, необходимое для запроса API (по умолчанию: администратор)
+-h, -help показывать это сообщение
+----
+
+Мы можем использовать инструмент для перечисления некоторых из наших последних запросов о предоставлении, например, так:
+
+[source,bash]
+----
+# Rails Runner Tools/rebuild_provision_request.rb --l
+
+Поиск последних 5 запросов, выполняемых против http: // admin: *****@localhost: 3000/api/provision_requests
+
+Найдено 5 запросов: 85,84,83,81,80
+
+85 - Предоставление от [Centos72 -Generic] до [Engtestsrv043]
+84 - Предоставление от [RHEL72 -Generic] до [ENGDBSRV004]
+83 - Предоставление от [Centos72 -Generic] до [Engtestsrv042]
+81-Предоставление от [Rhel-Guest-Image-7.2] к [Engwebsrv009]
+80-Предоставление от [Rhel-Guest-Image-7.2] к [Engwebsrv008]
+----
+
+Если мы выберем один из идентификаторов запроса, мы можем отобразить параметры, которые были указаны с помощью запроса.
+
+[source,bash]
+----
+# Rails Runner Tools/rebuild_provision_request.rb -r 84 -q
+
+{"версия" => "1.1",
+"template_fields" =>
+{"guid" => "279e8970-8ed3-11e6-98a1-001a4aa01502",
+"name" => "Rhel72-Generic",
+"request_type" => "шаблон"},
+"vm_fields" =>
+{"root_password" => "v2: {fg4jbx7, sj ***** i+na+w ==}",
+"cumpaise_template_id" => 9,
+"addr_mode" => "static",
+"HOSTNAME" => "ENGDBSRV004.BIT63.NET",
+"Placement_auto" => false,
+"Placement_cluster_name" => 1,
+"Placement_dc_name" => 2,
+"Placement_host_name" => 1,
+"Placement_ds_name" => 5,
+"number_of_vms" => 1,
+"provision_type" => "Native_clone",
+"vm_name" => "engdbsrv004",
+"vm_auto_start" => true,
+"ПЕРЕКТОца" => 0,
+"retirement_warn" => 604800,
+"vlan" => "rhevm",
+"disk_format" => "по умолчанию",
+"number_of_sockets" => 1,
+"CORES_PER_SOCKET" => 1,
+"vm_memory" => "2048",
+"Network_Adapters" => 1},
+"Записи" =>
+{"hower_first_name" => "peter",
+"владелец_ласт_name" => "McGowan",
+"hower_email" => "pemcg@gmail.com"},
+"Теги" => {},
+"extra_values" => nil,
+"ems_custom_attributes" => nil,
+"miq_custom_attributes" => nil}
+----
+
+Мы можем использовать выход из __rebuild_provision_request.rb__ таким образом в качестве шаблона для нашего собственного вызова или `create_provision_request`, либо для Retful API.
+
+=== Summary
+
+Возможность создания запросов на обеспечение программно дает нам полный контроль над процессом и имеет много применений. Например, при управлении масштабируемым облачным приложением мы можем настроить предупреждение CloudForms или Manageiq для обнаружения высокого использования ЦП на любом из существующих облачных экземпляров, составляющих рабочую нагрузку. Мы могли бы использовать оповещение, чтобы отправить событие управления, которое запускает метод автоматизации для масштабирования рабочей нагрузки путем предоставления дополнительных экземпляров (см.
+
+Мы также можем использовать `create_provision_request` из пользовательских элементов каталога обслуживания, когда государственные машины, предоставляющие услуги, не предоставляют необходимую функциональность (см.
+
+==== Further Reading
+
+http://manageiq.org/docs/reference/latest/api/Reference/provision_requeststrprovision запросы]
+
+http://manageiq.org/docs/reference/latest/api/appendices/provision_attributes.html= Атрибуты атрибутов]
