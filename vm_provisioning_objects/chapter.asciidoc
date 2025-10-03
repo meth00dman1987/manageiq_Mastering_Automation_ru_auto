@@ -1,0 +1,271 @@
+[[vm-provisioning-objects]]
+== Объекты обеспечения виртуальной машины
+
+Когда мы пишем наши собственные сценарии автоматизации, чтобы взаимодействовать с рабочим процессом, обеспечивающим виртуальные машины, нам нужно знать, как найти полезные объекты модели обслуживания, которые участвуют в процессе. Например, мы могли бы определить, как представляется операционная система виртуальной машины, чтобы мы могли решить, регистрировать ли новую виртуальную машину с помощью спутникового сервера Red Hat. Наш опыт до сих пор говорит нам, что это, вероятно, будет атрибутом модели обслуживания, но какой?
+
+В этой главе будут рассмотрены основные объекты модели обслуживания, которые участвуют в рабочем процессе, обеспечивающей виртуальную машину, и как и почему мы получаем доступ к ним.
+
+=== Object Overview
+
+В процессе обеспечения виртуальной машины или экземпляра есть несколько объектов модели обслуживания, но мы, как правило, работаем только с четырьмя из них, когда пишем наши собственные методы автоматизации для взаимодействия с рабочим процессом обеспечения (см. << i1 >>).
+
+[[i1]]
+.VM Объединенные объекты
+image::images/provisioning_objects.png["VM Provisioning Objects"]
+{zwsp} +
+
+=== The Provision Request Object
+
+Мы уже подробно обсудили объект запроса о предоставлении. Это объект, который содержит всю информацию, касающуюся запроса подготовки виртуальной машины.
+
+==== Request Context
+
+При работе на этапе запроса процесса обеспечения (то есть до утверждения) мы можем получить доступ к объекту запроса предоставления непосредственно из нашего рабочего пространства:
+
+[source,ruby]
+----
+$ evm.root ['miq_provision_request']
+----
+
+Существует ряд полезных атрибутов, которые мы можем прочитать из объекта запроса о предоставлении, включая детали запроса (человека), и мы можем установить пары ключей/значения в хэше параметров для управления самим процессом обеспечения виртуальной машины.
+
+Объект запроса предоставления имеет ряд полезных методов, которые мы можем использовать, например:
+
+[source,ruby]
+----
+miq_provision_request.add_tag
+miq_provision_request.approve
+miq_provision_request.authorized?
+miq_provision_request.check_quota
+miq_provision_request.ci_type
+miq_provision_request.clear_tag
+miq_provision_request.deny
+miq_provision_request.description =
+miq_provision_request.eligible_resources
+miq_provision_request.get_classification
+miq_provision_request.get_classifications
+miq_provision_request.get_folder_paths
+miq_provision_request.get_option
+miq_provision_request.get_option_last
+miq_provision_request.get_retirement_days
+miq_provision_request.get_tag
+miq_provision_request.get_tags
+miq_provision_request.pending
+miq_provision_request.register_automate_callback
+miq_provision_request.set_cluster
+miq_provision_request.set_customization_template
+miq_provision_request.set_dvs
+miq_provision_request.set_folder
+miq_provision_request.set_host
+miq_provision_request.set_iso_image
+miq_provision_request.set_message
+miq_provision_request.set_network_adapter
+miq_provision_request.set_network_address_mode
+miq_provision_request.set_nic_settings
+miq_provision_request.set_option
+miq_provision_request.set_pxe_image
+miq_provision_request.set_pxe_server
+miq_provision_request.set_resource
+miq_provision_request.set_resource_pool
+miq_provision_request.set_storage
+miq_provision_request.set_vlan
+miq_provision_request.set_vm_notes
+miq_provision_request.set_windows_image
+miq_provision_request.src_vm_id
+miq_provision_request.target_type
+----
+
+В частности, обратите внимание на различные методы `set`, которые доступны для определения значений для некоторых вариантов хэш -ключей (см.
+
+==== Task Context
+
+При работе на этапе задачи предоставления у нас есть другое рабочее пространство (`$ evm`), и здесь` $ evm.root` не ссылается непосредственно с `miq_provision_request`. Однако мы все еще можем добраться до объекта запроса предоставления через ассоциацию от объекта задачи miq_provision`
+
+[source,ruby]
+----
+$ evm.root ['miq_provision']. miq_provision_request
+----
+
+[NOTE]
+К тому времени, когда мы находимся в задаче обеспечения, настройка параметров в объекте запроса предоставления не будет иметь никакого эффекта. Однако все еще полезно иметь возможность читать значения из объекта запроса предоставления, когда на стадии задачи по обеспечению процесса обеспечения виртуальной машины.
+
+=== The Provision Task Object
+
+_Provision task object_ создается после того, как запрос на подготовку виртуальной машины был утвержден. Большая часть информации в объекте запроса предоставления - большинство
+Важно, варианты хэш - распространяются в объект задачи предоставления.
+
+Объект задачи предоставления имеет аналогичный набор методов для объекта запроса:
+
+[source,ruby]
+----
+miq_provision.add_tag
+miq_provision.check_quota
+miq_provision.clear_tag
+miq_provision.eligible_resources
+miq_provision.execute
+miq_provision.fined
+miq_provision.get_classification
+miq_provision.get_classifications
+miq_provision.get_domain_details
+miq_provision.get_domain_name
+miq_provision.get_folder_paths
+miq_provision.get_network_details
+miq_provision.get_network_scope
+miq_provision.get_option
+miq_provision.get_option_last
+miq_provision.get_tag
+miq_provision.get_tags
+miq_provision.message =
+miq_provision.register_automate_callback
+miq_provision.set_cluster
+miq_provision.set_customization_spec
+miq_provision.set_customization_template
+miq_provision.set_dvs
+miq_provision.set_folder
+miq_provision.set_host
+miq_provision.set_iso_image
+miq_provision.set_network_adapter
+miq_provision.set_network_address_mode
+miq_provision.set_nic_settings
+miq_provision.set_option
+miq_provision.set_pxe_image
+miq_provision.set_pxe_server
+miq_provision.set_resource
+miq_provision.set_resource_pool
+miq_provision.set_storage
+miq_provision.set_vlan
+miq_provision.set_vm_notes
+miq_provision.set_windows_image
+miq_provision.statemachine_task_status
+miq_provision.target_type
+miq_provision.user_message =
+----
+
+Наиболее важным из них является `execute`, который запускает машину _internal_ virtual machine. Сноска. Он реализован в модуле Rails `miqprovision :: Statemachine` и не настраивается из автоматизации.]
+
+=== The Source Object
+
+При обеспечении виртуальной машины из шаблона нам нужен объект для представления самого шаблона источника; Это _source object_.
+
+Исходный объект доступен через одну из двух ассоциаций из объекта запроса или задачи:
+
+[source,ruby]
+----
+$ evm.root ['miq_provision_request']. Source
+$ evm.root ['miq_provision_request']. VM_Template
+----
+
+или
+
+[source,ruby]
+----
+$ evm.root ['miq_provision']. Source
+$ evm.root ['miq_provision']. VM_Template
+----
+
+Поэтому мы можем получить доступ к исходному объекту при работе в контексте запроса или задачи.
+
+Исходный объект содержит очень полезный атрибут:
+
+....
+Source.wendor
+....
+
+Это имеет значение либо «Redhat», «VMware» или «microsoft», если мы предоставляем поставщику инфраструктуры. Мы можем использовать это для определения типа поставщика для этой операции по обеспечению обеспечения, и принятие решений в рабочем процессе соответственно. Этот атрибут используется в нескольких местах в машине состояния _vmprovision_vm_, чтобы выбрать соответствующий экземпляр для обработки задач, специфичных для поставщика, таких как размещение виртуальной машины, т.е.
+
+....
+/Infra.../vm/provisioning/placement/default#$ помощью/#miq_provision.source.vendor}
+....
+
+Существует также одинаково полезный виртуальный столбец:
+
+....
+Source.platform
+....
+
+Это имеет значение либо «Linux», либо «Windows», и мы можем аналогично использовать его для принятия решений рабочим процессом. Обычно мы использовали его, чтобы решить, следует ли, например, зарегистрировать новую виртуальную машину в Forman/Satellite 6 как часть процесса обеспечения.
+
+Все классы исходных объектов простираются от «miqaeservicevmortemplate» и, таким образом, имеют те же методы, что и общая виртуальная машина. На практике нам редко нужно запустить метод источника.
+
+=== The Destination Object
+
+Как только виртуальная машина была создана (т.е. после того, как * положение * состояния _vmprovision_vm_ состояния) у нас есть объект, который представляет недавно созданную виртуальную машину. Это _destination object_.
+
+Объект назначения доступен как ассоциация от объекта задачи:
+
+[source,ruby]
+----
+$ evm.root ['miq_provision']. назначение
+----
+
+Если мы хотим сделать какие -либо настройки виртуальной машине как часть рабочего процесса, например, добавить диск или NIC, изменить VLAN и т. Д. - мы вносим изменения в объект назначения.
+
+Объект назначения представляет собой подкласс «miqaeservicevmortemplate», так что есть стандартный набор методов, связанных с виртуальной машиной:
+
+[source,ruby]
+----
+destination.add_to_service
+destination.changed_vm_value?
+destination.collect_running_processes
+destination.create_snapshot
+destination.custom_get
+destination.custom_keys
+destination.custom_set
+destination.ems_custom_get
+destination.ems_custom_keys
+destination.ems_custom_set
+destination.ems_ref_string
+destination.error_reting?
+destination.event_log_threshold?
+destination.event_threshold?
+destination.finish_retirement
+destination.group =
+Destination.migrate
+Destination.owner =
+destination.performance_maintains_value_for_duration?
+destination.reboot_guest
+destination.reconfigured_hardware_value?
+destination.refresh
+назначение. Регистрация?
+destination.remove_all_snapshots
+destination.remove_from_disk
+destination.remove_from_service
+destination.remove_from_vmdb
+destination.remove_snapshot
+destination.retire_now
+destination.retied?
+destination.retirement_state =
+destination.retirement_warn =
+destination.retires_on =
+Destination.reiming?
+destination.revert_to_snapshot
+destination.scan
+destination.shutdown_guest
+destination.snapshot_operation
+destination.standby_guest
+Destination.start
+destination.start_retirement
+destination.stop
+Destination.suspend
+destination.sync_or_async_ems_operation
+destination.unlink_storage
+пункт назначения. Нерегистрация
+----
+
+В случае обеспечения виртуальной машины тот же объект назначения также доступен через ассоциацию VM`, т.е.
+
+[source,ruby]
+----
+$ evm.root ['miq_provision']. VM
+----
+
+Мы часто обнаруживаем, что объекты доступны с помощью нескольких имен ассоциаций.
+
+=== Summary
+
+В этой главе обсуждались четыре основных объекта модели обслуживания, с которыми мы работаем, когда взаимодействуем с рабочим процессом, обеспечивающим виртуальную машину или экземпляры, и мы видели методы, которые можно призывать к каждому объекту.
+
+Рабочий процесс, обеспечивающий виртуальную машину, одинаков для всех виртуальных машин, которые мы предоставляем в одну и ту же категорию поставщиков; _Infrastructure_ или _cloud_. Наша машина для обеспечения состояния используется для предоставления виртуальных машин для всех поставщиков в этой категории (например, как VMware, так и RHEV), все методы обеспечения (такие как загрузка PXE или клон из шаблона «FAT»), и независимо от предоставления операционной системы. Мы должны часто делать выбор в рамках нашего рабочего процесса на основе некоторых из этих критериев, в частности, поставщика поставщика пунктов назначения и предоставляемой операционной системы. Используя различные свойства объектов источника и запросов, мы можем точно определить, как представляется вкус виртуальной машины, используется тип подготовки и целевой поставщик.
+
+У нас также есть несколько вариантов настройки характеристик конечной виртуальной машины, вызывая методы в объекте назначения. Мы могли бы захотеть установить собственную группу и, возможно, установить пользовательский атрибут. Мы могли бы вызвать `destination.group =` и `destination.custom_set` к концу подготовленного рабочего процесса для достижения этого.
+

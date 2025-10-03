@@ -1,0 +1,309 @@
+[[using-tags-from-automate]]
+== Использование тегов из автоматического
+
+Теги являются очень мощной функцией CloudForms и Manageiq. Они позволяют нам добавлять возможности _smart Management_ в объекты в веб -сайте, такие как виртуальные машины, хосты или кластеры; создать фильтры, связанные с тегом; и группировать, сортировать или классифицировать элементы по тегу.
+
+Например, мы могли бы назначить тег виртуальной машине, чтобы определить, какой отдел или центр затрат владеет виртуальной машиной. Затем мы могли бы создать ставку ответа в платежных целях и назначить ставку всем виртуальным средствам, помеченным как принадлежащий конкретному отделу или центр затрат.
+
+Мы также можем пометить виртуальные машины с тегом «местоположение» или «Центр обработки данных». Мы могли бы создать представление фильтра в WebUI для отображения всех виртуальных машин в определенном месте, чтобы мы мгновенно могли видеть, какие системы могут быть затронуты, если мы запустим отказоустойчивому или мощному тесту центра обработки данных.
+
+Теги применяются не только к виртуальным машинам. Мы часто отмечаем наши компоненты виртуальной инфраструктуры, такие как хосты, кластеры или данные данных, с тегом «обеспечивающей масштаба». Когда мы предоставляем новые виртуальные машины, наш автоматический рабочий процесс должен определить, где разместить новую виртуальную машину (процесс, известный как _placement_). Мы можем использовать тег «обеспечивающего прицела», чтобы определить «наилучшее соответствие» для конкретной виртуальной машины, основанную на членстве в группе пользователя. Таким образом, мы можем, например, поместить все виртуальные машины, предоставляемые пользователями в группе разработки в непроизводственном кластере.
+
+Это всего лишь три примера того, как теги могут упростить системное администрирование, и помочь нашим автоматическим рабочим процессам. К счастью, Automate имеет всестороннюю поддержку для операций, связанных с тегами.
+
+Теги также являются основой системы Acccess Control (RBAC), основанной на роли. Мы можем использовать теги, чтобы предоставить доступ к определенным объектам для существующих групп пользователей. Обсуждение концепции RBAC выходит за рамки этого документа, но, тем не менее, что -то очень важное, чтобы иметь в виду.
+
+'''
+.Tag или пользовательский атрибут?
+****
+Мы уже видели использование пользовательского атрибута на виртуальной машине. На первый взгляд теги и пользовательские атрибуты кажутся похожими, но есть веские причины использовать один над другим.
+
+Теги лучше, если мы хотим классифицировать, сортировать или фильтровать объект на основе его тега. Например, мы могли бы быстро искать все элементы, помеченные определенным значением. Однако в категории должен существовать тег, прежде чем его можно будет использовать, и поэтому мы должны рассмотреть управляемость категорий тегов, которые содержат много сотен различных тегов.
+
+Пользовательские атрибуты лучше, если мы просто хотим назначить общую текстовую строку объекту, но не нужно сортировать или классифицировать объекты по имени атрибута или строке.
+****
+'''
+
+=== Creating Tags and Categories
+
+Теги определяются и используются в контексте тега __categories__. Мы можем проверить, существует ли категория, и если не создать ее:
+
+[source,ruby]
+----
+Если $ evm.execute ('Category_exists?', 'data_centre')
+$ evm.execute ('category_create',
+: name => 'data_centre',
+: single_value => false,
+: perf_by_tag => false,
+: description => "Центр обработки данных")
+конец
+----
+
+Мы также можем проверить, существует ли тег в категории, и если не создать его:
+
+[source,ruby]
+----
+Если $ vm.execute ('tag_exists?', 'data_centre', 'london')
+$ evm.execute ('tag_create',
+'data_centre',
+: name => 'London',
+: description => 'London East End')
+конец
+----
+
+[NOTE]
+Тег и категория _names_ должны быть буквенно-цифровыми и, необязательно содержать подчеркивание или колоны. Они имеют максимальную длину 50 символов. Тег и категория _descriptions_ может быть бесплатным текстом.
+
+=== Assigning and Removing Tags
+
+Мы можем назначить категорию/тег объекту (в данном случае виртуальная машина):
+
+[source,ruby]
+----
+vm = $ evm.root ['vm']
+vm.tag_assign ("data_center/london")
+----
+
+Мы можем удалить категорию/тег из объекта:
+
+[source,ruby]
+----
+vm = $ evm.root ['vm']
+vm.tag_unassign ("data_center/paris")
+----
+
+
+=== Testing Whether an Object is Tagged
+
+Мы можем проверить, помечен ли объект (в данном случае группа пользователей) с определенным тегом:
+
+[source,ruby]
+----
+ci_owner = 'Engineering'
+группы = $ evm.vmdb (: miq_group). Все
+Groups.each do | Group |
+Если Group.tagged_with? ("Департамент", CI_OWNER)
+$ evm.log ("info", "Group #{group.description} помечена")
+конец
+конец
+----
+
+=== Retrieving an Object's Tags
+
+Мы можем получить список всех тегов, назначенных объекту, используя метод `Tags`:
+
+[source,ruby]
+----
+Group_tags = Group.tags
+----
+
+Этот метод также позволяет нам извлекать теги в определенной категории (в данном случае, используя имя тега в качестве символа):
+
+[source,ruby]
+----
+all_department_tags = group.tags (: department)
+first_department_tag = group.tags (: department). First
+----
+
+[TIP]
+При вызове без аргумента метод `Tags` возвращает теги как строки« категория/тег ». При вызове с аргументом категории тегов метод возвращает имя тега в качестве строки.
+
+=== Searching for Specifically Tagged Objects
+
+Мы можем искать объекты, с меткой конкретной теги, используя метод `find_tagged_with`:
+
+[source,ruby]
+----
+Tag = "/Managed/Department/Syseng"
+hosts = $ evm.vmdb (: host) .find_tagged_with (: all => Tag ,: ns => "*")
+----
+
+Этот пример показывает, что сами категории организованы в пространства имен за кулисами. На практике единственное пространство имен, которое, по -видимому, используется, - это _/Managed_, и нам редко нужно указать это.
+
+[NOTE]
+Метод `find_tagged_with` имеет немного неоднозначное прошлое. Он присутствовал в Manageiq _anand_, но вернул активные записи, а не объекты miqaeservice. Он исчез как метод автоматизации в Manageiq _botvinnik_, но, к счастью, обратно с Manageiq _capablanca_ и теперь возвращает объекты модели службы, как и ожидалось.
+
+==== Practical example
+
+Мы могли бы обнаружить все компоненты инфраструктуры, помеченные _/отдел/инженерия_. Возможно, мы захотим узнать имя класса _service model_ объекта и имя или пример объекта. Мы могли бы достичь этого, используя следующий фрагмент кода:
+
+[source,ruby]
+----
+tag = '/отдел/инженерия'
+[: vm_or_template ,: host ,: ems_cluster ,: resect].
+this_objects = $ evm.vmdb (service_object) .find_tagged_with (: all => Tag,
+: ns => "/Managed")
+this_objects.each do | this_object |
+service_model_class = "#{this_object.method_missing (: class)}". демодулизовать
+$ evm.log ("info", " #{service_model_class}: #{this_object.name}")
+конец
+конец
+----
+
+На небольшой системе Manageiq _Capablanca_ Это печатает:
+
+....
+Miqaeservicemanageiq_providers_redhat_inframanager_template: Rhel7-Generic
+Miqaeservicemanageiq_providers_redhat_inframanager_vm: RHEL7SRV010
+Miqaeservicemanageiq_providers_openstack_cloudmanager_vm: RHEL7SRV031
+Miqaeservicemanageiq_providers_redhat_inframanager_host: rhelh03.bit63.net
+Miqaeservicestorage: данные
+....
+
+[NOTE]
+====
+Этот фрагмент кода показывает пример того, где нам нужно работать с распределенным Ruby или вокруг него (Druby). Следующее перечисление цикла через _THESE_OBJECTS_, заменив _THIS_OBJECT_ на каждую итерацию:
+
+[source,ruby]
+----
+this_objects.each do | this_object |
+  ...
+конец
+----
+
+Обычно это прозрачно для нас, и мы можем ссылаться на такие методы объекта, как «имя», и все работы, как и ожидалось.
+
+За кулисами, однако, наш сценарий автоматизации удаляет все эти объекты через свой Druby Client объект. Мы должны иметь это в виду, если мы также хотим найти имя класса удаленного объекта.
+
+Если мы позвоним _THIS_OBJECT.CLASS_, мы получаем строку "DRB :: DRBOBJECT", которая является правильным именем класса для объекта Druby Client. Мы должны сказать Druby пересылать метод _class_ вызов на Druby Server, и мы делаем это, вызывая _This_object.method_missing (: class) _. Теперь мы возвращаем полный модуль :: Название класса удаленного Druby Object (например, `miqaemethodservice :: miqaeservicestorage`), но мы можем назвать метод« демодулизовать »на строке, чтобы лишить` miqaemethodservice :: `` paths от имени, оставляя нас с `miqaeService.
+====
+
+=== Getting the List of Tag Categories
+
+На версиях перед управлением _capablanca_, получение списка категорий тегов было немного сложным. Обе теги и категории перечислены в одной и той же таблице _classifications_, но теги также имеют ненулевое значение _parent_id_, которое связывает их с их категорией. Чтобы найти категории из таблицы _classifications_ Мы должны были искать записи с помощью Zero Parent_ID:
+
+[source,ruby]
+----
+Категории = $ evm.vmdb ('classification'). где (: parent_id => 0)
+Категории. ВАШЕГО ДО | Категория |
+$ evm.log (: info "
+конец
+----
+
+С помощью Manageiq _capablanca_ теперь у нас есть ассоциация «категории» непосредственно из объекта `miqaeserviceclassication`, чтобы мы могли сказать:
+
+[source,ruby]
+----
+$ evm.vmdb (: classification) .categories.each Do | Категория |
+$ evm.log (: info "
+конец
+----
+
+=== Getting the List of Tags in a Category
+
+Иногда нам нужно получить список тегов в определенной категории, и для этого мы должны выполнить двойной поиск - один раз, чтобы получить идентификатор классификации, и снова найти объекты miqaeserviceclassification` с этим Parent_id:
+
+[source,ruby]
+----
+Classification = $ evm.vmdb (: classification) .find_by_name ('stod_centre')
+stod_centre_tags = {}
+$ evm.vmdb (: classification). где (: parent_id => classification.id).
+stod_centre_tags [tag.name] = tag.description
+конец
+----
+
+=== Finding a Tag's Name, Given its Description
+
+Иногда нам нужно добавить тег в объект, но у нас есть только текстовое описание тега (возможно, это соответствует значению считываемого из внешнего источника). Нам нужно найти имя TAG SNAKE_CASE для использования с помощью метода `TAG_APPLY
+
+[source,ruby]
+----
+Department_classification = $ evm.vmdb (: classification) .find_by_name ('Департамент')
+tag = $ evm.vmdb ('classification'). где (["parent_id =? и description =?",
+Department_classification.id, 'System Engineering']). Первый
+TAG_NAME = TAG.NAME
+----
+
+Имена тегов не в таблице _classifications_ (только описание тега). Когда мы называем `tag.name`, Rails запускает неявный поиск таблицы _tags_ для нас, на основе tag.id:
+
+....
+IRB (Main): 051: 0> Tag.name
+Загрузка тега (0,6 мс) Выберите «Теги».* Из «Теги», где «теги». «Id» = 44 предел 1
+Tag Inst, включающий ассоциации (0,1 мс - 1 уход)
+=> "syseng"
+....
+
+=== Finding a Specific Tag (MiqAeServiceClassification) Object
+
+Мы можем просто искать объект тега, который соответствует данной категории/тегу:
+
+[source,ruby]
+----
+tag = $ evm.vmdb (: classification) .find_by_name ('Департамент/HR')
+----
+
+[TIP]
+Все, что возвращается из `$ evm.vmdb (: classification)` - это объект miqaeserviceclassication`, а не текстовая строка.
+
+=== Deleting a Tag or Tag Category
+
+Теперь мы можем удалить тег или категорию, используя API Restful:
+
+[source,ruby]
+----
+требуется 'rest-client'
+требуется 'Json'
+требуется 'openssl'
+требуется 'base64'
+
+начинать
+
+def rest_action (uri, глагол, полезная нагрузка = nil)
+заголовки = {
+: content_type => 'Application/json',
+: Accept => 'Application/json; версия = 2',
+      :authorization => "Basic #{Base64.strict_encode64("#{@user}:#{@passwd}")}"
+    }
+response = restClient :: request.new (
+: method => глагол,
+: url => uri,
+: ghingers => Headers,
+: PAYTOAD => PAWEROAD,
+verify_ssl: false
+).выполнять
+return json.parse (response.to_str), если response.code.to_i == 204
+конец
+  
+servername = $ evm.object ['servername']
+@user = $ evm.object ['username']
+@passwd = $ evm.object.decrypt ('пароль')
+
+uri_base = "https: //#{servername}/api/"
+  #
+# Удалить категорию тегов
+  #
+Категория = $ evm.vmdb (: classification) .find_by_name ('network_location')
+REST_ACTION ("#{uri_base}/categories/#{category.id}" ,: delete)
+  #
+# Удалить тег
+  #
+tag = "/Managed/Department/Sales"
+Ответить = REST_ACTION ("#{uri_base}/теги? Filter [] = name =#{Tag}",: get)
+tag_href = reply ['resources'] [0] ['href']
+REST_ACTION (TAG_HREF,: DELETE)
+
+Выход miq_ok
+  
+Rescue RestClient :: exception => err
+Если только ERR.Response.nil?
+$ evm.log (: error, "Производна запроса отдыха, код: #{err.response.code}")
+$ evm.log (: ошибка, "тело ответа: \ n#{err.response.body.inspect}")
+конец
+Выход miq_stop
+rescue => err
+$ evm.log (: error, "[#{err}] \ n#{err.backtrace.join (" \ n ")}")
+Выход miq_stop
+конец
+----
+
+В этом примере мы определяем общий метод, называемый «REST_ACTION», который использует GREM Ruby _ ++ Rest-Client ++ _ для обработки подключения RESTFUL. Мы извлекаем учетные данные сервера Manageiq из схемы экземпляра так же, как мы делали в ссылке: ../ Использование_SCHEMA_VARIABLE/gupt.asciidoc [Использование переменных схемы], и мы получаем модель службы категории тегов, которые мы хотим удалить, чтобы получить его идентификатор.
+
+Наконец, мы делаем Restful _DELETE_ CALL в URI /API /API /категории, указав идентификатор категории тегов, который будет удален.
+
+=== Summary
+
+В этой главе мы видели, как мы можем работать с тегами из наших сценариев автоматизации, и мы широко используем эти методы по мере продвижения по книге.
+
+==== Further Reading
+
+https://access.redhat.com/articles/421423 г. Creating и использование тегов в Red Hat Cloudforms]
