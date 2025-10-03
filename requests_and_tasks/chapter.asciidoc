@@ -1,0 +1,336 @@
+[[requests-and-tasks]]
+== Запросы и задачи
+
+Мы видели несколько ссылок на запросы на автоматизацию и задачи в книге. Эта глава объясняет, что они есть, их различия и почему это полезно понять их. Это глава «глубокого погружения», так что не стесняйтесь пропустить ее и вернуться позже, если любопытно.
+
+=== The Need For Approval
+
+Некоторые относительно простые операции автоматизации приводят к тому, что экземпляр автоматизации работает непосредственно без необходимости одобрения администратором. Примеры этого:
+
+* Запуск экземпляра автоматизации от симуляции
+* Автоматизация экземпляров, которые работают для заполнения динамических диалоговых элементов
+* Запуск экземпляра автоматизации из кнопки
+* Автоматизировать экземпляры, введенные в результате типа действия политики управления * вызовой пользовательской автоматизации *
+* Предупреждает, которые отправляют * управленческое мероприятие *
+
+Сценарии автоматизации, которые мы разработали до сих пор, попадают в эту первую категорию.
+
+Другие более сложные операции автоматизации, такие как обеспечение виртуальных машин или облачных экземпляров, могут изменить или потреблять ресурсы в нашей виртуальной или облачной инфраструктуре. Для этого типа операции как CloudForms, так и Manageiq позволяют нам вставить этап утверждения в автоматический рабочий процесс. Это происходит путем разделения операции на два отдельных этапа - _Request_ и _task_, причем административное утверждение требуется для прогрессирования от одного к другому.
+
+Примеры этого:
+
+* Вызов запроса на автоматизацию через API Restful
+* Предоставление хозяина
+* Обеспечение виртуальной машины
+* Запрашивая услугу
+* Пересмотр виртуальной машины
+* Пересмотр услуги
+* Мигрирование виртуальной машины
+
+Давайте теперь посмотрим на это более подробно.
+
+=== Request and Task Objects
+
+Существуют объекты двигателя автоматизации, представляющие две стадии каждой из этих более сложных операций. Каждый тип объекта содержит информацию, относящуюся к его конкретному этапу. _Request object_ содержит информацию о запрашиваемой и операции, которая будет выполнена. _Task object_ содержит подробную информацию о статусе фактической операции автоматизации («Задача»).
+
+[width="86%",cols="^30%,^35%,^35%",options="header",align="center"]
+|=======================================================================
+| Операция | объект запроса | объект задачи
+| Универсальная операция | miq_request | miq_request_task
+
+| Запрос на автоматизацию | Automation_Request | Automation_Task
+
+| Подготовка хоста | miq_host_provision_request | miq_host_provision
+
+| Подготовка vm | miq_provision_request | miq_provision
+
+| Reconfiging a vm | vm_reconfigure_request | vm_reconfigure_task
+
+| Запрос службы | service_template_provision_request
+| service_template_provision_task
+
+| Персонал службы | Service_reconfigure_Request
+| service_reconfigure_task
+
+| Мигрирование vm | vm_migrate_request | vm_migrate_task
+|=======================================================================
+
+В дополнение к перечисленным здесь, своего рода псевдо-запрос объекта создается, когда мы добавляем элемент каталога услуг для предоставления виртуальной машины.
+
+Когда мы создаем элемент каталога, мы заполняем поля * запроса *, как будто мы представляли виртуальную машину в интерактивном отношении через * инфраструктуру -> Виртуальные машины -> LifeCycle -> Provision VMS * Menu (см. Ссылку :/ Crotect_a_service_catalog_item/grape.asciidoc [Создание элемента каталига услуг]).
+
+Значения, которые мы выбираем или вводим, добавляются в хэш параметров в недавно созданном объекте `miq_provision_request_template`. Это служит шаблоном «запроса» для всех последующих операций по обеспечению виртуальной машины из этого элемента каталога услуг.
+
+[width="86%",cols="^30%,^35%,^35%",options="header",align="center"]
+|=======================================================================
+| Операция | "Запрос" объект | объект задачи
+| VM заказан из элемента каталога услуг | miq_provision_request_template
+| miq_provision
+|=======================================================================
+
+==== Request and Task Object Classes
+
+Если запрос утвержден, один или несколько объектов задачи будут созданы из информации, содержащейся в объекте запроса (например, один запрос на три виртуальных машин приведет к трем объектам задачи).
+
+Объекты запроса, полученные из базового класса `miqaeservicemiqrequest`, следующие:
+
+----
+MiqaeserviceautomationRequest
+Miqaeservicemiqhostprovisionrequest
+MiqaeservicemiqprovisionConfiguredSystemRequest
+Miqaeservicemiqprovisionrequest
+Miqaeservicemiqprovisionrequesttemplate
+Miqaeserviceserviceconfigurerequest
+MiqaeserviceserviceTemplateProvisionRequest
+Miqaeservicevmmigrateerequest
+Miqaeservicevmreconfigurerequest
+----
+
+Объекты задачи, полученные прямо или косвенно из базового класса `miqaeservicemiqrequesttask`, следующие:
+
+----
+Miqaeserviceautomationtask
+Miqaeservicemanageiq_providers_amazon_cloudmanager_provision
+Miqaeservicemanageiq_providers_azure_cloudmanager_provision
+Miqaeservicemanageiq_providers_google_cloudmanager_provision
+Miqaeservicemanageiq_providers_openstack_cloudmanager_provision
+Miqaeservicemanageiq_providers_cloudmanager_provision
+Miqaeservicemiqprovision
+Miqaeservicemiqprovisiontask
+Miqaeservicemanageiq_providers_foreman_configurationmanager_provisiontask
+Miqaeservicemanageiq_providers_microsoft_inframanager_provision
+Miqaeservicemanageiq_providers_redhat_inframanager_provision
+Miqaeservicemanageiq_providers_redhat_inframanager_provisionviaiso
+Miqaeservicemanageiq_providers_redhat_inframanager_provisionviapxe
+Miqaeservicemanageiq_providers_vmware_inframanager_provision
+Miqaeservicemanageiq_providers_vmware_inframanager_provisionviapxe
+Miqaeservicemiqhostprovision
+Miqaeserviceserviceconfiguretask
+MiqaeserviceserviceTemplateProvisionTask
+MiqaeservicevmmygrateTask
+Miqaeservicevmreconfiguretask
+----
+
+Мы видим, что есть еще много типов объекта задачи. Это связано с тем, что запрос на выполнение действия (например, положение VM) может быть преобразована в один из нескольких типов рабочего процесса - например, для предоставления виртуальной машины в облачную или инфраструктурную поставщика - и, следовательно, объект задачи.
+
+=== Approval
+
+Запросы на автоматизацию должны быть утверждены до создания объекта задачи, который обрабатывает рабочий процесс автоматизации. Пользователи администраторов могут автоматически одобрить свои собственные запросы, в то время как стандартным пользователям нужны свои запросы, явно утвержденные всеми в группе контроля доступа с ролями evmrole-super_administrator, evmrole-administrator или evmrole-approver.
+
+У некоторых рабочих процессов автоматизации есть этап _proval_, который может автоматически одобрять запросы, даже от стандартных пользователей. Наиболее распространенная операция автоматизации, которую часто выполняют стандартные пользователи, - это обеспечить виртуальную машину, и для этого существуют пороговые значения одобрения (** max_vms **, ** max_cpus **, ** max_memory **, ** max_retirement_days **). Запросы на предоставление виртуальных машин Указание чисел или размеров ниже этих порогов, автоматически одобрены, тогда как запросы, превышающие эти пороговые значения, блокируются в ожидании явного одобрения.
+
+=== Context
+
+Когда мы разрабатываем наши собственные сценарии автоматизации, мы можем работать с запросом _or_ объекта задачи, в зависимости от стадии рабочего процесса операции, с которой мы взаимодействуем (например, предоставление виртуальной машины). Иногда нам приходится искать один, и если это не удастся, запасение на другое, как так:
+
+[source,ruby]
+----
+prov = $ evm.root ['miq_provision_request'] ||
+$ evm.root ['miq_provision'] ||
+$ evm.root ['miq_provision_request_template']
+----
+
+Если у нас есть объект запроса, то не обязательно может быть объект задачи (пока), но если у нас есть один из этих более сложных объектов задачи, мы всегда можем следовать ассоциации, чтобы найти объект запроса, который ему предшествовал.
+
+[TIP]
+====
+Когда мы разрабатываем методы автоматизации, понимание того, работаем ли мы в запросе или контексте задачи, может быть действительно полезным. Подумайте о том, какой этап в потоке автоматизации будет запущен метод - до или после одобрения.
+
+Пример сценария: мы хотим установить количество виртуальных машин, которые будут представлены как часть операции по обеспечению виртуальной машины. Мы знаем, что можно установить клавишу HASH с параметрами `: number_of_vms`, но это появляется в хэш с параметрами как для объектов задачи, так и для запросов. (См. Ссылку: ../ the_options_hash/gupt.asciidoc [hash heash] для получения более подробной информации).
+Где мы должны установить?
+
+Ответ: объекты _task_ создаются после утверждения _Request_, а количество виртуальных машин, подлежащих предоставлению, является одним из критериев, которые автоматическое одобрение использует, чтобы решить, утверждать ли запрос или нет. Клавиша `: number_of_vms` также определяет, сколько объектов _task_ создается (это объект _task_, который содержит виртуальные варианты, такие как клавиши`: vm_target_name`, `: ip_addr` и т. Д.)
+
+Поэтому мы должны установить `: number_of_vms` в _request_ hash, * до * создаются объекты _task_.
+====
+
+=== Object Contents
+
+Объект запроса содержит подробную информацию о запрашиваемом (лицо), статусе утверждения, утверждении (лицо) и разуме, а также о параметрах, которые будут использоваться для полученной задачи в форме __options hash__. Хэш с параметрами содержит любую необходимую информацию, требуемую для завершения операции автоматизации, и ее размер зависит от типа запроса автоматизации. В случае _miq_provision_Request_ Опции хэш имеет более 70 паров ключей/значений, что указывает характеристики виртуальной машины, как и так:
+
+----
+...
+miq_provision_request.options [: vlan] = ["rhevm", "rhevm"] (тип: массив)
+miq_provision_request.options [: vm_auto_start] = [true, 1] (тип: массив)
+miq_provision_request.options [: vm_description] = nil
+miq_provision_request.options [: vm_memory] = ["2048", "2048"] (тип: массив)
+miq_provision_request.options [: vm_name] = rhel7srv003 (type: string)
+...
+----
+
+Большая часть информации в объекте запроса распространяется на объект задачи, включая хэш с параметрами.
+
+==== Dumping the Object Contents
+
+Мы можем использовать `object_walker`, чтобы показать разницу между запросом на автоматизацию и объектом задачи, установив следующую` walk_association_whitelist`:
+
+[source,ruby]
+----
+{"Miqaeserviceautomationtask": ["Automation_Request", "miq_request"]}
+----
+
+Мы можем вызвать экземпляр object_walker из API Restful, используя _/API/Automation_Requests_ URI.
+
+===== The Request Object
+
+Когда запускается экземпляр Automate (в данном случае Object_walker), запрос уже был утвержден, и поэтому наш `$ evm.root` имеет только прямую ссылку на объект задачи. Объект запроса все еще доступен через ассоциацию от объекта задачи: однако:
+
+----
+Automation_Request = $ evm.root ['Automation_task']. Automation_Request
+(Тип объекта: miqaeserviceautomationRequest, ID объекта: 2000000000003)
+|    Automation_Request.proval_state = Applypen (Type: String)
+|    Automation_Request.created_on = 2016-06-07 09:14:03 UTC (Тип: ActivesUp ...
+|    Automation_Request.Description = Задача автоматизации (тип: строка)
+|    Automation_Request.id = 200000000000003 (тип: fixnum)
+|    Automation_Request.message = Запрос автоматизации инициирован (тип: строка)
+|    Automation_Request.options [: attrs] = {: userId => "admin"} (тип: хэш)
+|    Automation_Request.options [: class_name] = ObjectWalker (type: String)
+|    Automation_Request.options [: Delivered_on] = 2016-06-07 09:14:10 UTC
+|    Automation_Request.options [: exancem_name] = object_walker (type: string)
+|    Automation_Request.Options [: namespace] = bit63/discovery (type: string)
+|    Automation_Request.options [: user_id] = 2000000000001 (тип: fixnum)
+|    Automation_Request.request_state = Active (Type: String)
+|    Automation_Request.request_type = Automation (тип: строка)
+|    Automation_Request.Requester_id = 2000000000001 (тип: fixnum)
+|    Automation_Request.Requester_Name = Администратор (тип: строка)
+|    Automation_Request.status = OK (тип: строка)
+|    Automation_Request.Type = AutomationRequest (type: String)
+|    Automation_Request.Updated_on = 2016-06-07 09:14:13 UTC (Тип: ActivesUp ...
+|    Automation_Request.userid = admin (type: string)
+|    --- Виртуальные столбцы следуют ---
+|    Automation_Request.Reason = Auto-Pursed (Type: String)
+|    Automation_Request.region_Description = Region 2 (тип: строка)
+|    Automation_Request.region_number = 2 (type: fixnum)
+|    Automation_Request.request_type_display = Automation (тип: строка)
+|    Automation_Request.Resource_Type = AutomationRequest (type: String)
+|    Automation_Request.Stamped_on = 2016-06-07 09:14:04 UTC (Тип: ActivesUp ...
+|    Automation_Request.state = Active (Type: String)
+|    Automation_Request.v_approved_by = Администратор (тип: строка)
+|    Automation_Request.v_approved_by_email = (type: string)
+|    --- Конец виртуальных столбцов ---
+|    --- Ассоциации следуют ---
+|    Automation_Request.Provers (Тип: Ассоциация (пусто))
+|    Automation_Request.Automation_TASKS (Тип: Ассоциация)
+|    Automation_Request.Destination (Тип: Ассоциация (пусто))
+|    Automation_Request.miq_request (тип: ассоциация)
+|    Automation_Request.miq_request_tasks (Тип: Ассоциация)
+|    Automation_Request.Requester (Тип: Ассоциация)
+|    Automation_Request.Resource (Тип: Ассоциация)
+|    Automation_Request.source (Тип: Ассоциация (пусто))
+|    Automation_Request.tenant (Тип: Ассоциация)
+|    --- Конец ассоциаций ---
+|    --- методы следуют ---
+|    Automation_Request.add_tag
+|    Automation_Request.Approve
+|    Automation_Request.Authorized?
+|    Automation_Request.clear_tag
+|    Automation_Request.deny
+|    Automation_Request.Description =
+|    Automation_Request.get_Classification
+|    Automation_Request.get_Classifications
+|    Automation_Request.get_option
+|    Automation_Request.get_option_last
+|    Automation_Request.get_tag
+|    Automation_Request.get_tags
+|    Automation_Request.pending
+|    Automation_Request.set_message
+|    Automation_Request.set_option
+|    Automation_Request.user_message =
+|    --- Конец методов ---
+----
+
+===== The Task Object 
+
+Объект задачи доступен непосредственно от `$ evm.root`:
+
+----
+$ evm.root ['Automation_task'] => #<miqaemethodservice :: miqaeserviceautomation \
+Задача: 0x0000000800A0C0> (Тип: DRB :: DRBOBJECT, URI: Druby: //127.0.0.1: 35216)
+|    $ evm.root ['Automation_task']. Create_on = 2016-06-07 09:14:10 UTC
+|    $ evm.root ['Automation_task']. Описание = задача автоматизации (тип: строка)
+|    $ evm.root ['Automation_task']. ID = 200000000000003 (тип: fixnum)
+|    $ evm.root ['Automation_task']. Message = Запрос автоматизации инициирован
+|    $ evm.root ['Automation_task']. Miq_request_id = 2000000000003 (тип: fixnum)
+|    $ evm.root ['Automation_task']. Options [: attrs] = {: userId => "admin"}
+|    $ evm.root ['Automation_task']. Options [: class_name] = ObjectWalker (type: String)
+|    $ evm.root ['Automation_task']. Options [: delload_on] = 2016-06-07 09:14:10
+|    $ evm.root ['Automation_task']. Options [: exancem_name] = Object_walker
+|    $ evm.root ['Automation_task']. Options [: namespace] = bit63/discovery
+|    $ evm.root ['Automation_task']. Опции [: user_id] = 2000000000001
+|    $ evm.root ['Automation_task']. phase_context = {} (тип: хэш)
+|    $ evm.root ['Automation_task']. request_type = Automation (Type: String)
+|    $ evm.root ['Automation_task']. State = Active (Type: String)
+|    $ evm.root ['Automation_task']. Status = повторный (тип: строка)
+|    $ evm.root ['Automation_task']. Type = AutomationTask (type: String)
+|    $ evm.root ['Automation_task'].
+|    $ evm.root ['Automation_task']. userId = admin (type: string)
+|    --- Виртуальные столбцы следуют ---
+|    $ evm.root ['Automation_task']. Region_description = Region 2 (тип: строка)
+|    $ evm.root ['Automation_task']. Region_number = 2 (тип: fixnum)
+|    --- Конец виртуальных столбцов ---
+|    --- Ассоциации следуют ---
+|    $ evm.root ['Automation_task']. Automation_Request (Тип: Ассоциация)
+
+<как указано выше>
+     
+|    Automation_Request = $ evm.root ['Automation_task']. Automation_Request
+(Тип объекта: miqaeserviceautomationRequest, ID объекта: 2000000000003)
+|    Automation_Request.proval_state = Applypen (Type: String)
+|    Automation_Request.created_on = 2016-06-07 09:14:03 UTC (Тип: Activ ...
+|    Automation_Request.Description = Задача автоматизации (тип: строка)
+|    Automation_Request.id = 200000000000003 (тип: fixnum)
+|    Automation_Request.message = Запрос автоматизации инициирован
+     ...
+</как указано выше>
+
+|    $ evm.root ['Automation_task']. Destination (Тип: Ассоциация (пусто))
+|    $ evm.root ['Automation_task']. Miq_request (Тип: Ассоциация)
+|    miq_request = $ evm.root ['Automation_task']. Miq_request
+|    (Тип объекта: miqaeserviceautomationRequest, ID объекта: 2000000000003)
+|    $ evm.root ['Automation_task']. Miq_request_task (Тип: Ассоциация (пусто))
+|    $ evm.root ['Automation_task']. MIQ_REQUEST_TASKS (Тип: Ассоциация (пусто))
+|    $ evm.root ['Automation_task']. Источник (Тип: Ассоциация (пусто))
+|    $ evm.root ['Automation_task']. Арендатор (Тип: Ассоциация)
+|    --- Конец ассоциаций ---
+|    --- методы следуют ---
+|    $ evm.root ['Automation_task']. add_tag
+|    $ evm.root ['Automation_task']. clear_tag
+|    $ evm.root ['Automation_task']. Выполнить
+|    $ evm.root ['Automation_task']. Закончено
+|    $ evm.root ['Automation_task']. GET_CLASSIFICAITION
+|    $ evm.root ['Automation_task']. Get_classifications
+|    $ evm.root ['Automation_task']. get_option
+|    $ evm.root ['Automation_task']. get_option_last
+|    $ evm.root ['Automation_task']. get_tag
+|    $ evm.root ['Automation_task']. get_tags
+|    $ evm.root ['Automation_task']. Message =
+|    $ evm.root ['Automation_task']. SET_OPTION
+|    $ evm.root ['Automation_task']. Statemachine_task_status
+|    $ evm.root ['Automation_task']. user_message =
+|    --- Конец методов ---
+$ evm.root ['Automation_task_id'] = 200000000000003 (тип: строка)
+----
+
+==== Comparing the Objects
+
+Мы можем увидеть некоторые интересные вещи:
+
+* Из объекта задачи объект запроса доступен от любой из двух ассоциаций, его конкретный тип объекта `$ evm.root ['Automation_task']. Automation_Request` и более общий` $ evm.root ['Automation_task']. Miq_request`. Они оба ссылаются на один и тот же объект запроса, и это имеет место со всеми более сложными объектами задачи - мы всегда можем следовать ассоциации `miq_request ', чтобы вернуться к запросу, независимо от типа объекта запроса.
+* Мы видим, что объект запроса имеет несколько специфических методов утверждения, которых у объекта задачи нет (или необходимо):
+
+----
+Automation_Request.Approve
+Automation_Request.Authorized?
+Automation_Request.deny
+Automation_Request.pending
+----
+
+Мы можем использовать эти методы для реализации нашего собственного механизма рабочего процесса утверждения, если мы пожелаем (см.
+
+==== Summary
+
+Глава показывает, как более сложные рабочие процессы автоматизации разделены на стадию _request_ и стадию _task_. Это позволяет нам опционально вставить между ними «воротами» административного утверждения и, таким образом, поддерживать уровень контроля над нашими стандартными пользователями, чтобы они не могли выполнять неконтролируемые операции автоматизации в нашей виртуальной инфраструктуре.
+
+Мы обсудили объекты запроса и задачи, и почему можно быть полезным отслеживать, работают ли наши сценарии автоматизации в контексте запроса или задачи (и, следовательно, какой из двух объектов использовать).
+
+Это был довольно подробный анализ, но это очень полезные понятия для понимания.

@@ -1,0 +1,302 @@
+[[log-analysis-during-service-provisioning]]
+== Анализ журнала во время обеспечения обслуживания
+
+Рабочий процесс обеспечения виртуальной машины из каталога услуг включает в себя запрос, этап утверждения, несколько задач и несколько одновременно работающих государственных машин.
+
+Если нам интересно узнать больше об их взаимодействии, мы можем следовать этому рабочему процессу, изучив строки журналов, записанные для _automation.log_ во время операции по обеспечению обслуживания. Это может раскрыть некоторые интересные подробности о чередовании различных операций и государственных машин.
+
+В этом примере мы познакомились с «следующими ... последовательными» парами сообщений в _automation.log_. Запрос на предоставление услуг был от пользователя, не являющегося АДМИН, в группе _bit63_user_, поэтому мы видим некоторую обработку профиля, специфичную для группы. Для целей краткости _service_template_provision_ сокращается до _stp_ в сведении выходов.
+
+=== Initial Request and Profile Lookup
+
+Мы видим, как создается первоначальный запрос на обслуживание, и поиск профиля _service_
+```
+Следующие [/system/police/request_created#create]
+Следующий [/system/process/parse_provider_category#создать]
+Следуйте [/system/process/parse_provider_category#create]
+Следующие [/System/Policy/ServiceTemplateProvisionRequest_created#CREATE]
+Следующее [/service/provisioning/profile/bit63_user#get_auto_proval_state_machine]
+Следуйте [/service/provisioning/profile/bit63_user#GET_AUTO_PAPPOLVOL_STATE_MACHINE]
+Следующие [/service/provisioning/stateMachines/serviceProvisionRequestApproval/default#create]
+Следуйте [/Service/Provisioning/StateMachines/ServiceProvisionRequestApproval/Default#CREATE]
+Следуйте [/System/Policy/ServiceTemplateProvisionRequest_created#CREATE]
+Следуйте [/System/Police/request_created#CREATE]
+Следуйте [/system/event/requestevent/request/request_created#create]
+```
+
+=== Request Processing and Approval
+
+Мы видим рабочий процесс request_pess, и запуск запроса. Некоторые операции, выполняемые в контексте обеспечения шаблона услуг _request_ (service_template_provision_request_59), включая рабочий процесс проверки квот:
+
+```
+Следующие [/system/event/requestevent/request/request_pessud#create]
+Следующие [/system/police/request_proved#create]
+Следующий [/system/process/parse_provider_category#создать]
+Следуйте [/system/process/parse_provider_category#create]
+Следующие [/system/policy/serviceTemplateProvisionRequest_pressud#create]
+Следующие [/service/provisioning/email/serviceTemplateProvisionRequest_pressud#Создание]
+Следуйте [/service/provisioning/email/serviceTemplateProvisionRequest_Approved#CREATE]
+Следуйте [/System/Policy/ServiceTemplateProvisionRequest_PAVERED#CREATE]
+Следуйте [/System/Policy/request_proved#CREATE]
+Следуйте [/system/event/requestevent/request/request_pessud#create]
+
+(STP_REQUEST_59) Следующая [/System/Event/RequestEvent/request/request_starting#CREATE]
+(STP_REQUEST_59) следующим образом [/System/Police/Request_starting#CREATE]
+(STP_REQUEST_59) Следующий [/System/Process/Parse_provider_category#CREATE]
+(stp_request_59) следовал [/system/process/parse_provider_category#create]
+(STP_REQUEST_59) Следующая [/System/Policy/ServiceTemplateProvisionRequest_Starting#CREATE]
+(STP_REQUEST_59) Следующая [/System/CommonMethods/QuatastateMachine/Quotats#CREATE]
+(STP_REQUEST_59) Следующая [/System/CommonMethods/Quotamethods/Quata_source#CREATE]
+(stp_request_59) следовал [/system/commonmethods/quotamethods/quota_source#create]
+(STP_REQUEST_59) Следующая [/System/CommonMethods/Quotamethods/Limits#CREATE]
+(stp_request_59) следовал [/System/Commonmethods/Quotamethods/Limits#CREATE]
+(stp_request_59) следовал [/system/commonmethods/Quatastatemachine/Quotats#Create]
+(stp_request_59) следовал [/system/policy/servicetemplateprovisionrequest_starting#create]
+(stp_request_59) следовал [/system/police/request_starting#create]
+(STP_REQUEST_59) следовал [/System/Event/RequestEvent/request/request_starting#create]
+(STP_REQUEST_59) Следующая [/System/request/service_provision_info#create]
+(STP_REQUEST_59) Следующий [/service/provisioning/profile/bit63_user#include_service]
+(STP_REQUEST_59) следовал [/service/provisioning/profile/bit63_user#include_service]
+(stp_request_59) следовал [/system/request/service_provision_info#create]
+(STP_REQUEST_59) Следующий [/System/request/ui_provision_info#create]
+(STP_REQUEST_59) следующим образом [/infra.../vm/provisioning/profile/bit63_user#get_vmname]
+(STP_REQUEST_59) Следующий [/INFRA.../VM/Provisioning/naming/default#create]
+(stp_request_59) следовал [/infra.../vm/provisioning/naming/default#create]
+(stp_request_59) следовал [/infra.../vm/provisioning/profile/bit63_user#get_vmname]
+(stp_request_59) следовал [/system/request/ui_provision_info#create]
+```
+
+Обратите внимание, что эта обработка _Request_ выполняет метод именования, который, следовательно, обрабатывается * до * _catalogiteminitialization_ (который обрабатывается в контексте _task_).
+
+=== Service Template Provisioning Tasks
+
+Далее мы видим два шаблона службы, созданные _tasks_, наши объекты верхнего уровня и дочернего задания (service_template_provision_task_117 и service_template_provision_task_118).
+
+[NOTE]
+====
+Две задачи фактически выполняются через две отдельные государственные машины.
+
+Task _service_template_provision_task_117_ работает через _/service/provisioning/statemachines/serviceprovision_template/catalogiteminitialization_. Это верхний уровень или «родительский» service_template_provision_task, описанный в ссылке: ../ service_objects/gupt.asciidoc [Объекты службы].
+
+Task _service_template_provision_task_118_ работает через _/service/provisioning/statemachines/serviceprovision_template/clone_to_service_. Это «ребенок» miq_request_task, описанный в ссылке: ../ service_objects/gupt.asciidoc [Объекты службы].
+====
+
+```
+(STP_TASK_117) Следующим [/service/provisioning/statemachines/methods/dialogparser#create]
+(stp_task_117) следовал [/service/provisioning/statemachines/methods/dialogparser#create]
+(STP_TASK_117) Следующим [/service/provisioning/statemachines/methods/catalogiteminitialization#create]
+(STP_TASK_117) следовал [/service/provisioning/statemachines/methods/catalogiteminitialization#create]
+(STP_TASK_117) Следующим [/service/provisioning/statemachines/methods/provision#create]
+(stp_task_117) следовал [/service/provisioning/statemachines/methods/provision#create]
+(STP_TASK_117) Следующим [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(STP_TASK_117) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+
+(STP_TASK_118) Следующим [/service/provisioning/statemachines/methods/group shequenceCeck#create]
+(STP_TASK_118) следовал [/service/provisioning/statemachines/methods/group shequenceCececk#create]
+(STP_TASK_118) Следующим [/service/provisioning/statemachines/methods/provision#create]
+(stp_task_118) следовал [/service/provisioning/statemachines/methods/provision#create]
+(STP_TASK_118) следующим образом [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(stp_task_118) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+```
+
+=== VM Provisioning Task
+
+Мы видим, как наш внук Miq_provision создал объект задачи (miq_provision_119) и обрабатывает методы _/infra .../vm/provisioning/statemachines_ в статоде, определенном в нашем профиле пользователя:
+
+```
+(miq_provision_119) после [/infra.../vm/lifecycle/provisioning#create]
+(miq_provision_119) после [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) следовал [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/customizerequest#redhat]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/customizerequest#redhat]
+(miq_provision_119) после [/infra.../vm/provisioning/placement/default#redhat]
+(miq_provision_119) следовал [/infra.../vm/provisioning/placement/default#redhat]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/preprovision#redhat]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/preprovision#redhat]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/provision#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/provision#create]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) следовал [/infra.../vm/lifecycle/provisioning#create]
+(miq_provision_119) следующий [/system/request/ui_provision_info#create]
+(miq_provision_119) после [/infra.../vm/provisioning/profile/bit63_user#get_placement]
+(miq_provision_119) следовал [/infra.../vm/provisioning/profile/bit63_user#get_placement]
+(miq_provision_119) следовал [/system/reffer/ui_provision_info#create]
+```
+
+=== Events
+
+Мы видим, что некоторые события запускаются и обрабатываются коммутатором события:
+```
+Следующий [/system/event/emsevent/rhevm/user_add_vm_started#create]
+Следуйте [/system/event/emsevent/rhevm/user_add_vm_started#create]
+```
+
+=== Service State Machine _CheckProvisioned_ States
+
+Мы видим, что задачи по обеспечению подготовки шаблона обслуживания на высшем уровне, так и на детском обслуживании выполняют их методы _checkprovisioned_:
+
+```
+([stp_task_117]) следующая/служба/предоставление/statemachines/methods/checkprovisioned
+([stp_task_117]) следовал/Service/Provisioning/Statemachines/Methods/CheckProvisioned
+([stp_task_118]) следующая/служба/предоставление/Statemachines/methods/checkprovisioned
+([stp_task_118]) следовал/Service/Provisioning/Statemachines/Methods/CheckProvisioned
+```
+
+=== VM State Machine _CheckProvisioned_ State
+
+Мы видим машину государственного обеспечения VM, использующую метод _CheckProvisioned_. Мы можем увидеть всю _/инфра .../vm/provisioning/statemachines_ matche, которая переосмыслена для каждого вызова его метода _checkprovisioned_, включая поиск профиля:
+
+```
+(miq_provision_119) после [/infra.../vm/lifecycle/provisioning#create]
+(miq_provision_119) после [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) следовал [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) следовал [/infra.../vm/lifecycle/provisioning#create]
+```        
+
+[NOTE]
+Напомним, что если государство уходит с `$ evm.root ['ae_result'] = 'retry'', вся машина штата перезапускается после интервала повторения, начиная с государства, которое будет повторно обработать.
+
+Мы видим, как государственные машины службы и виртуальной машины запускают свои методы _checkprovisioned_ в течение нескольких минут, в то время как положение виртуальной машины прогрессирует:
+
+```
+(STP_TASK_117) Следующим [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(STP_TASK_117) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) после [/infra.../vm/lifecycle/provisioning#create]
+(miq_provision_119) после [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) следовал [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) следовал [/infra.../vm/lifecycle/provisioning#create]
+(STP_TASK_118) следующим образом [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(stp_task_118) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(STP_TASK_117) Следующим [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(STP_TASK_117) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) после [/infra.../vm/lifecycle/provisioning#create]
+(miq_provision_119) после [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) следовал [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) следовал [/infra.../vm/lifecycle/provisioning#create]
+(STP_TASK_118) следующим образом [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(stp_task_118) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+```
+
+Как только создание виртуальной машины завершено, мы увидим еще несколько мероприятий, включая события обработки политики. В нашей системе у нас есть политика управления, которая запрашивает анализ Smartstate для каждой созданной виртуальной машины:
+``` 
+Следующие [/system/event/emsevent/rhevm/user_add_vm_fined_success#create]
+Следуйте [/system/event/emsevent/rhevm/user_add_vm_fined_success#create]
+Следующие [/system/event/miqevent/policy/vm_snapshot_complete#create]
+Следуйте [/system/event/miqevent/policy/vm_snapshot_complete#create]
+Следующие [/system/event/miqevent/policy/vm_create#create]
+Следуйте [/system/event/miqevent/policy/vm_create#create]
+Следующие [/system/event/miqevent/policy/vm_provisioned#create]
+Следуйте [/system/event/miqevent/policy/vm_provisioned#create]
+Следующие [/system/event/miqevent/police/request_vm_scan#create]
+Следуйте [/system/event/miqevent/police/request_vm_scan#create]
+```
+
+=== Virtual Machine Provision State Machine Continuing
+
+Мы видим машину _infrastructure/vm_ wordation _checkprovisioned_ return и продолжать оставшуюся часть состояния машины (начиная с _postprovision_). Этот пример создает виртуальную машину в поставщике RHEV, и мы видим, что на внутренней машине государство положение на самом деле является двухэтапной операцией; Начальная операция клона VM, за которой следует задача реконфигурации VM для установки нашей желаемой конфигурации виртуальной машины - номер ЦП, размер памяти - и так далее.
+
+Существует значительная деятельность, связанная с событиями, во время операции по обеспечению виртуальной машины, как мы видим:
+
+```
+(miq_provision_119) после [/infra.../vm/lifecycle/provisioning#create]
+(miq_provision_119) после [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) следовал [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/checkprovisioned#create]
+Следующий [/system/event/emsevent/rhevm/user_update_vm#create]
+Следуйте [/system/event/emsevent/rhevm/user_update_vm#create]
+Следующий [/system/event/miqevent/policy/vm_scan_start#create]
+Следуйте [/System/Event/MiQevent/Policy/VM_SCAN_START#CREATE]
+Следующие [/system/event/emsevent/rhevm/network_update_vm_interface#create]
+Следуйте [/system/event/emsevent/rhevm/network_update_vm_interface#create]
+Следующие [/system/event/miqevent/policy/vm_reconfigure#create]
+Следующее
+Следовал [/infra.../vm/reconfigure/email/vmreconfiguretaskcomplete#create]
+Следуйте [/system/event/miqevent/policy/vm_reconfigure#create]
+
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/methods/postprovision#redhat]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/methods/postprovision#redhat]
+(miq_provision_119) следующая [/интеграция/redhat/methods/adddisk#create]
+Следующие [/system/event/emsevent/rhevm/user_add_disk_to_vm#create]
+Следуйте [/system/event/emsevent/rhevm/user_add_disk_to_vm#create]
+Следующие [/system/event/emsevent/rhevm/user_add_disk_to_vm_fined_success#create]
+Следуйте [/system/event/emsevent/rhevm/user_add_disk_to_vm_fined_success#create]
+(miq_provision_119) следовал [/интеграция/redhat/methods/adddisk#create]
+
+Следующий [/system/event/miqevent/policy/vm_scan_complete#create]
+Следуйте [/system/event/miqevent/policy/vm_scan_complete#create]
+
+(miq_provision_119) следующая [/интеграция/redhat/methods/startvm#create]
+Следующий [/system/event/emsevent/rhevm/user_started_vm#create]
+Следуйте [/system/event/emsevent/rhevm/user_started_vm#create]
+Следующий [/system/event/miqevent/police/request_vm_start#create]
+Следуйте [/system/event/miqevent/police/request_vm_start#create]
+Следующие [/system/event/emsevent/rhevm/user_run_vm#create]
+Следуйте [/system/event/emsevent/rhevm/user_run_vm#create]
+Следующие [/system/event/miqevent/policy/vm_start#create]
+Следуйте [/system/event/miqevent/policy/vm_start#create]
+(miq_provision_119) следовал [/интеграция/redhat/methods/startvm#create]
+```
+
+=== Virtual Machine Provision Complete
+
+В конце концов мы видим, как государственная машина VM Provision завершена:
+
+```
+(miq_provision_119) после [/infra.../vm/lifecycle/provisioning#create]
+(miq_provision_119) после [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) следовал [/infra.../vm/provisioning/profile/bit63_user#get_state_machine]
+(miq_provision_119) после [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) после [/infra.../vm/provisioning/email/miqprovision_complete?event=vm_provisioned#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/email/miqprovision_complete?event=vm_provisioned#create]
+(miq_provision_119) после [/system/commonmethods/statemachinemethods/vm_provision_finished#create]
+(miq_provision_119) следовал [/system/commonmethods/statemachinemethods/vm_provision_finished#create]
+(miq_provision_119) следовал [/infra.../vm/provisioning/statemachines/vmprovision_vm/template#create]
+(miq_provision_119) следовал [/infra.../vm/lifecycle/provisioning#create]
+```
+
+=== Service Provision Complete
+
+Наконец, мы видим оба машины _service_ provisioning wation _checkprovisioned_ методы возвращают успех и продолжаем оставшуюся часть своих государственных машин:
+
+```
+(STP_TASK_118) следующим образом [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(stp_task_118) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(STP_TASK_118) Следующим [/service/provisioning/email/serviceprovision_complete? event = service_provisioned#create]
+(stp_task_118) следовал [/service/provisioning/email/serviceprovision_complete? Event = service_provisioned#create]
+(STP_TASK_118) Следующим [/System/CommonMethods/Statemachinemethods/service_provision_finished#create]
+(STP_TASK_118) следовал [/System/CommonMethods/StatemachineMethods/service_provision_finished#create]
+ 
+Следующие [/system/event/miqevent/policy/service_provisioned#create]
+Следуйте [/system/event/miqevent/policy/service_provisioned#create]
+ 
+(STP_TASK_117) Следующим [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(STP_TASK_117) следовал [/service/provisioning/statemachines/methods/checkprovisioned#create]
+(STP_TASK_117) Следующая [/service/provisioning/email/serviceprovision_complete? Event = service_provisioned#create]
+(stp_task_117) следовал [/service/provisioning/email/serviceprovision_complete? event = service_provisioned#create]
+(STP_TASK_117) Следующим [/System/CommonMethods/Statemachinemethods/service_provision_finished#create]
+(STP_TASK_117) следовал [/System/CommonMethods/StatemachineMethods/service_provision_finished#create]
+ 
+Следующие [/system/event/miqevent/policy/service_provisioned#create]
+Следуйте [/system/event/miqevent/policy/service_provisioned#create]
+```
+
+=== Summary
+
+Отслеживание этапов различных рабочих процессов, хотя _automation.log_ может многое раскрыть о внутренней работе двигателя автоматизации. Всем студентам автоматизации рекомендуется исследовать пары сообщений «Следующие ... последовательные» в журналах, чтобы понять, как задачи последовательности государственных машин и обрабатывать операции повторения.
